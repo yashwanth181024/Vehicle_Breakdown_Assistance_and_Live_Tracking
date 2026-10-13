@@ -1,0 +1,89 @@
+/* Design tokens. The look borrows from Indian highway signage:
+   sign blue for actions, hi-vis yellow reserved for the one urgent action, asphalt for text.
+   Dark mode follows the device unless the person picks a theme with the button in the header. */
+:root {
+  --font-body: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-head: 'Barlow Condensed', 'Barlow', system-ui, sans-serif;
+
+  --sign: #0b4f9e;
+  --sign-deep: #083a75;
+  --on-sign: #ffffff;
+  --signal: #ffc72c;
+  --on-signal: #15191e;
+
+  --bg: #f5f6f4;
+  --surface: #ffffff;
+  --surface-2: #eceeec;
+  --text: #15191e;
+  --text-2: #4a525a;
+  --line: #d6dad8;
+  --line-strong: #b4bab7;
+  --link: #0b4f9e;
+  --focus: #0b4f9e;
+
+  --ok: #17703e;
+  --ok-bg: #dcf1e4;
+  --warn: #7a4e00;
+  --warn-bg: #ffecb8;
+  --danger: #b42818;
+  --danger-bg: #fbdfda;
+  --info: #0b4f9e;
+  --info-bg: #dbe8f8;
+
+  --radius: 8px;
+  --radius-lg: 14px;
+  --shadow-pop: 0 10px 30px rgba(21, 25, 30, 0.22);
+
+  --nav-h: 60px;
+  --page-w: 1120px;
+}
+
+:root[data-theme='dark'] {
+  --bg: #0e1114;
+  --surface: #161a1f;
+  --surface-2: #1e242a;
+  --text: #e9ecee;
+  --text-2: #a3abb3;
+  --line: #2a3138;
+  --line-strong: #3d464e;
+  --link: #7ab6ff;
+  --focus: #ffc72c;
+  --sign: #1760c0;
+  --sign-deep: #0f4a96;
+
+  --ok: #6fd69a;
+  --ok-bg: #12301f;
+  --warn: #ffd36b;
+  --warn-bg: #3a2c08;
+  --danger: #ff8c7d;
+  --danger-bg: #3d1713;
+  --info: #8fc1ff;
+  --info-bg: #10284a;
+  --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.6);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme='light']) {
+    --bg: #0e1114;
+    --surface: #161a1f;
+    --surface-2: #1e242a;
+    --text: #e9ecee;
+    --text-2: #a3abb3;
+    --line: #2a3138;
+    --line-strong: #3d464e;
+    --link: #7ab6ff;
+    --focus: #ffc72c;
+    --sign: #1760c0;
+    --sign-deep: #0f4a96;
+
+    --ok: #6fd69a;
+    --ok-bg: #12301f;
+    --warn: #ffd36b;
+    --warn-bg: #3a2c08;
+    --danger: #ff8c7d;
+    --danger-bg: #3d1713;
+    --info: #8fc1ff;
+    --info-bg: #10284a;
+    --shadow-pop: 0 10px 30px rgba(0, 0, 0, 0.6);
+  }
+}

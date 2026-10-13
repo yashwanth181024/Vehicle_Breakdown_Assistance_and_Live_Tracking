@@ -1,0 +1,14 @@
+node_modules/
+.env
+.env.*
+!.env.example
+dist/
+build/
+coverage/
+uploads/*
+!uploads/.gitkeep
+*.log
+.DS_Store
+.vscode/
+.idea/
+scripts/migrated-credentials.csv
