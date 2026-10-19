@@ -1,2 +1,44 @@
-# Auto detect text files and perform LF normalization
-* text=auto
+# Auto-detect text files and normalise line endings to LF in the repository
+* text=auto eol=lf
+
+# ===== Source and config files: always LF =====
+*.js    text eol=lf
+*.jsx   text eol=lf
+*.ts    text eol=lf
+*.tsx   text eol=lf
+*.json  text eol=lf
+*.css   text eol=lf
+*.scss  text eol=lf
+*.html  text eol=lf
+*.md    text eol=lf
+*.yml   text eol=lf
+*.yaml  text eol=lf
+*.env.example text eol=lf
+*.sh    text eol=lf
+
+# ===== Windows scripts: keep CRLF =====
+*.bat   text eol=crlf
+*.cmd   text eol=crlf
+
+# ===== Binary files: never modify =====
+*.png   binary
+*.jpg   binary
+*.jpeg  binary
+*.gif   binary
+*.webp  binary
+*.ico   binary
+*.svg   text
+*.pdf   binary
+*.zip   binary
+*.woff  binary
+*.woff2 binary
+*.ttf   binary
+*.eot   binary
+*.otf   binary
+*.mp3   binary
+*.mp4   binary
+
+# ===== Hide generated files from GitHub diffs and language stats =====
+package-lock.json   -diff linguist-generated
+yarn.lock           -diff linguist-generated
+Project-Output*/**  linguist-documentation
