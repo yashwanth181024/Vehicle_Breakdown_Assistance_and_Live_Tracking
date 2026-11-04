@@ -220,7 +220,7 @@ All outputs are in the [`Project-Output's`](https://github.com/yashwanth181024/V
 
 ## Author
 
-**Yashwanth G S** and **Adarsha Babu Gouda**
+**Yashwanth G S**
 MCA, Dr. Ambedkar Institute of Technology, Bengaluru (VTU)
 GitHub: [@yashwanth181024](https://github.com/yashwanth181024)
 
