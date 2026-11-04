@@ -1,6 +1,6 @@
 # Vehicle Breakdown Assistance and Live Tracking
 
-An AI-assisted web platform that connects stranded drivers with nearby roadside-assistance drivers, with live tracking on a map, real-time chat, multi-channel booking notifications, a multilingual interface, and an admin analytics dashboard. It can also be installed on a phone as a Progressive Web App (PWA).
+A MERN-stack web platform that connects stranded drivers with nearby roadside-assistance drivers, with no-login booking, nearest-driver auto-dispatch, live tracking on a map, real-time chat, a multilingual interface, and an admin analytics dashboard. It can also be installed on a phone as a Progressive Web App (PWA).
 
 [![Live Demo](https://img.shields.io/badge/Live%20Demo-Render-0B4F9E?style=for-the-badge)](https://vehicle-breakdown-assistant-1-sdp9.onrender.com/)
 [![GitHub](https://img.shields.io/badge/Source-GitHub-181717?style=for-the-badge&logo=github)](https://github.com/yashwanth181024/Vehicle_Breakdown_Assistance_and_Live_Tracking)
@@ -10,6 +10,7 @@ An AI-assisted web platform that connects stranded drivers with nearby roadside-
 > The demo runs on a free Render instance, so the first load can take up to a minute while the server wakes up.
 
 *MCA III Semester Project, 2026-27 | Dr. Ambedkar Institute of Technology, Bengaluru | Visvesvaraya Technological University (VTU)*
+*Submitted for the 11th International INEX Expo (State Level Selection, Karnataka)*
 
 ---
 
@@ -27,55 +28,57 @@ An AI-assisted web platform that connects stranded drivers with nearby roadside-
 
 ## About the Project
 
-When a vehicle breaks down, help is usually arranged by phone: the user has to describe where they are, nobody automatically picks the nearest driver, and there is no way to see when help will arrive. This project puts booking, dispatch, tracking, and communication into one platform so a stranded user can request help, watch the driver arrive on the map, and chat with them live.
+When a vehicle breaks down, help is usually arranged by phone: the user has to describe where they are, nobody automatically picks the nearest driver, and there is no way to see when help will arrive. This project puts booking, dispatch, tracking, and communication into one platform so a stranded user can request help without creating an account, watch the driver arrive on the map, and chat with them live.
+
+The system was verified with 14 test cases across 8 testing levels.
 
 ## Features
 
 **Users**
-- Book breakdown assistance with auto-detected pickup location and a fare estimate
-- Voice input on the booking screen (speech-to-text and text-to-speech)
-- Booking confirmation and status tracking, with email, SMS, and WhatsApp notifications
-- Live driver tracking with route and ETA, and real-time chat with the driver
+- Book breakdown assistance without logging in, with auto-detected pickup location and a fare estimate
+- Request help by text, by voice input (English, Hindi, and Kannada), or with one-tap SOS
+- Booking confirmation and status tracking
+- Live driver tracking with route on the map, and real-time chat with the driver
 - Share location on or off, and share a tracking link
-- Photo-based AI diagnosis of the vehicle problem
 - Generated service receipt after a job
 - Interface in English, Hindi, and Kannada
 - Installable as a PWA on mobile
 
 **Drivers**
 - Separate login and dashboard
-- Accept or reject requests, with a timeout that passes the request to the next driver
+- Accept or reject requests within a one-minute offer window, after which the request moves on
 - Current job view, completed and cancelled jobs, and earnings
 
 **Admins**
 - Separate login and dashboard
 - Driver management and request management (pending and assigned)
-- Analytics dashboard with a breakdown hotspot heatmap
-- Reports with exported bookings report
+- Manual dispatch fallback when no driver accepts an offer
+- Analytics dashboard
+- Reports with CSV export of bookings
 - Configurable fares and pricing
 
 ## Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Frontend | React, Vite, PWA |
-| Backend | Node.js, Express |
-| Database | MongoDB Atlas |
+| Frontend | React 18, Vite, Recharts, PWA |
+| Backend | Node.js 18, Express |
+| Database | MongoDB Atlas (Mongoose) |
 | Real-time | Socket.IO (live location and chat) |
-| Maps and location | Browser Geolocation API, maps API |
-| Notifications | Email, SMS, and WhatsApp provider APIs |
-| AI | AI API for photo-based diagnosis |
+| Maps and routing | Leaflet, OSRM, Browser Geolocation API |
+| Authentication | JWT, bcrypt |
 | Hosting | Render |
 
-**Database collections:** admins, bookings, drivers, fare configs, job offers, messages, pages, pricings, trackings.
+**Database collections (9):** admins, bookings, drivers, fare configs, job offers, messages, pages, pricings, trackings.
 
 ## How Dispatch Works
 
 1. The user submits a breakdown request with their location.
 2. The system finds available drivers and ranks them by distance.
-3. The nearest driver receives the request (a job offer) and a timer starts.
+3. The nearest driver receives the request (a job offer) and a one-minute timer starts.
 4. If the driver rejects or the timer runs out, the next nearest driver is tried.
-5. After acceptance, the user sees the driver's live location, route, and ETA, and both can chat.
+5. If no driver accepts, an admin can assign the request manually.
+6. After acceptance, the user sees the driver's live location and route, and both can chat.
 
 ## Project Structure
 
@@ -116,13 +119,6 @@ PORT=5055
 MONGODB_URI=<your MongoDB Atlas connection string>
 JWT_SECRET=<a long random string>
 CLIENT_URL=http://localhost:5173
-
-# Add keys for the services you use
-EMAIL_USER=<email address>
-EMAIL_PASS=<app password>
-SMS_API_KEY=<sms provider key>
-WHATSAPP_API_KEY=<whatsapp provider key>
-AI_API_KEY=<ai provider key>
 ```
 ```bash
 npm run dev
@@ -215,14 +211,16 @@ All outputs are in the [`Project-Output's`](https://github.com/yashwanth181024/V
 
 ## Roadmap
 
-- Mobile apps
+- Native mobile apps for customers and drivers
+- More accurate ETA using live traffic data
 - Online payments
-- Route-based ETA with live traffic data
-- Predictive driver positioning using hotspot data
+- AI-powered assistance
+- Push, SMS, and email alerts
+- Cloud scaling for higher traffic
 
 ## Author
 
-**Yashwanth G S**
+**Yashwanth G S** and **Adarsha Babu Gouda**
 MCA, Dr. Ambedkar Institute of Technology, Bengaluru (VTU)
 GitHub: [@yashwanth181024](https://github.com/yashwanth181024)
 
