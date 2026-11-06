@@ -9,6 +9,7 @@ import StatusTimeline from '../components/StatusTimeline';
 import TrackingMap from '../components/TrackingMap';
 import ChatBox from '../components/ChatBox';
 import ShareLinkButton from '../components/ShareLinkButton';
+import PayNowButton from '../components/PayNowButton.jsx';
 import { CLOSED, cleanPhone, formatDateTime, isPhone, statusClass } from '../utils/format';
 import { driverOf, isLive, parseBookingNumber, pickupPoint, pickupText, readRoute, toPoint } from '../utils/booking';
 
@@ -322,6 +323,8 @@ export default function TrackBooking() {
               {driver.phone && <a className="btn btn-ok btn-sm" href={`tel:${driver.phone}`}>{t('Call')} {driver.phone}</a>}
             </div>
           )}
+
+          <PayNowButton booking={booking} />
 
           {status === 'Completed' && (
             <div className="card">

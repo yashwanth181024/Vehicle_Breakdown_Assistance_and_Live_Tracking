@@ -18,6 +18,7 @@ const { apiLimiter } = require('./middleware/rateLimit');
 const { notFound, errorHandler } = require('./middleware/errorHandler');
 const { initSockets } = require('./sockets');
 const dispatchService = require('./services/dispatch.service');
+const paymentRoutes = require('./routes/paymentRoutes');
 
 const app = express();
 const server = http.createServer(app);
@@ -32,6 +33,7 @@ dispatchService.init(io);
 app.set('trust proxy', 1); // needed behind Render's proxy so rate limiting sees the real IP
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors(corsOptions));
+app.use('/api/payments', paymentRoutes);
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));

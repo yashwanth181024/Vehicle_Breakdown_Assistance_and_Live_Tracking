@@ -62,6 +62,7 @@ const bookingSchema = new mongoose.Schema(
     dispatchFailed: { type: Boolean, default: false }, // true when no driver accepted
     fare: { type: Number },
     distanceKm: { type: Number, default: 0 },
+    paymentStatus: { type: String, enum: ['unpaid', 'paid'], default: 'unpaid', index: true },
 
     // --- Severity (accident / highway jobs rank first in the admin queue) ---
     severity: { type: String, enum: SEVERITIES, default: 'medium', index: true },
