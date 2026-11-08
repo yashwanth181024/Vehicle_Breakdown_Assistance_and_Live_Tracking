@@ -6,6 +6,13 @@ const razorpay = require('../services/razorpayService');
 const Payment = require('../models/Payment');
 const Booking = require('../models/Booking');
 
+if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
+  console.error('Payment controller error: RAZORPAY_WEBHOOK_SECRET is missing');
+}
+if (!process.env.FRONTEND_URL) {
+  console.error('Payment controller error: FRONTEND_URL is missing');
+}
+
 // ============ ADJUST TO MATCH YOUR BOOKING MODEL (STEPS.md, step 3) ============
 const F = {
   number: 'bookingNumber',   // field holding the booking number
@@ -77,6 +84,17 @@ exports.createOrder = async (req, res) => {
     if (!bookingNumber || !phone) {
       return res.status(400).json({ message: 'Booking number and phone are required' });
     }
+
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      const missingVars = [];
+      if (!process.env.RAZORPAY_KEY_ID) missingVars.push('RAZORPAY_KEY_ID');
+      if (!process.env.RAZORPAY_KEY_SECRET) missingVars.push('RAZORPAY_KEY_SECRET');
+      console.error(`createOrder error: Missing environment variable(s): ${missingVars.join(', ')}`);
+      return res.status(500).json({
+        message: `Payment gateway is not configured: Missing ${missingVars.join(', ')}`,
+      });
+    }
+
     const booking = await findBooking(bookingNumber, phone);
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
     if (booking[F.paid] === 'paid') return res.status(400).json({ message: 'Already paid' });
@@ -122,7 +140,7 @@ exports.createOrder = async (req, res) => {
     });
   } catch (e) {
     console.error('createOrder', e);
-    res.status(500).json({ message: 'Could not create order' });
+    res.status(500).json({ message: e.message || 'Could not create order' });
   }
 };
 
@@ -131,6 +149,10 @@ exports.verifyPayment = async (req, res) => {
     const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
     if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return res.status(400).json({ message: 'Missing fields' });
+    }
+    if (!process.env.RAZORPAY_KEY_SECRET) {
+      console.error('verifyPayment error: RAZORPAY_KEY_SECRET is missing');
+      return res.status(500).json({ message: 'Payment gateway secret is not configured' });
     }
     const expected = crypto
       .createHmac('sha256', process.env.RAZORPAY_KEY_SECRET)
@@ -172,6 +194,10 @@ exports.verifyPayment = async (req, res) => {
 // req.body is a raw Buffer (express.raw in the route file)
 exports.webhook = async (req, res) => {
   try {
+    if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
+      console.error('webhook error: RAZORPAY_WEBHOOK_SECRET is missing');
+      return res.status(500).send('Webhook secret is not configured');
+    }
     const sig = req.headers['x-razorpay-signature'];
     const expected = crypto
       .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
@@ -209,7 +235,10 @@ exports.receipt = async (req, res) => {
 
     const payment = await Payment.findOne({ bookingNumber: String(bookingNumber), status: 'paid' });
     const fare = Number(F.fare(booking)) || 0;
-    const payUrl = `${process.env.FRONTEND_URL}/pay/${bookingNumber}`;
+    if (!process.env.FRONTEND_URL) {
+      console.error('receipt error: FRONTEND_URL is missing');
+    }
+    const payUrl = `${process.env.FRONTEND_URL || ''}/pay/${bookingNumber}`;
 
     const doc = new PDFDocument({ margin: 50 });
     res.setHeader('Content-Type', 'application/pdf');
