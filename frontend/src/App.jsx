@@ -15,6 +15,7 @@ const Contact = lazy(() => import('./pages/Contact.jsx'));
 const BookingRequest = lazy(() => import('./pages/BookingRequest.jsx'));
 const TrackBooking = lazy(() => import('./pages/TrackBooking.jsx'));
 const SharedTracking = lazy(() => import('./pages/SharedTracking.jsx'));
+const PaymentPage = lazy(() => import('./pages/PaymentPage.jsx'));
 
 const AdminLogin = lazy(() => import('./pages/admin/Login.jsx'));
 const AdminDashboard = lazy(() => import('./pages/admin/Dashboard.jsx'));
@@ -92,6 +93,7 @@ export default function App() {
             <Route path="/book" element={<BookingRequest />} />
             <Route path="/track" element={<TrackBooking />} />
             <Route path="/share/:token" element={<SharedTracking />} />
+            <Route path="/pay/:bookingNumber" element={<PaymentPage />} />
 
             <Route path="/admin/login" element={<AdminLogin />} />
             <Route path="/admin" element={<ProtectedRoute role="admin"><AdminDashboard /></ProtectedRoute>} />

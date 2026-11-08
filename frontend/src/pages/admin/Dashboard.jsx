@@ -4,6 +4,7 @@ import api, { getErrorMessage } from '../../api/axios';
 import { useSocketEvent } from '../../hooks/useSocket';
 import { formatDateTime, statusClass } from '../../utils/format';
 import { listOf, pick } from '../../utils/adapt';
+import AdminPaymentsPanel from '../../components/AdminPaymentsPanel.jsx';
 
 const CARDS = [
   { label: 'Total requests', keys: ['totalBookings', 'total', 'bookings'] },
@@ -76,6 +77,8 @@ export default function AdminDashboard() {
           })}
         </div>
       )}
+
+      <AdminPaymentsPanel />
 
       <div className="card" style={{ marginTop: 20 }}>
         <div className="row" style={{ justifyContent: 'space-between' }}>
