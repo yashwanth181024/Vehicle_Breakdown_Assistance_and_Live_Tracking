@@ -21,6 +21,18 @@ export default function PaymentPage() {
     return () => socket.disconnect();
   }, [bookingNumber]);
 
+  // check initial status on load when phone has at least 10 digits
+  useEffect(() => {
+    if (!bookingNumber || phone.replace(/\D/g, '').length < 10) return;
+    fetch(`${API}/api/payments/status/${bookingNumber}?phone=${encodeURIComponent(phone)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (d && (d.status === 'paid' || d.paid)) setStatus('paid');
+        if (d && d.fare) setFare(d.fare);
+      })
+      .catch(() => {});
+  }, [bookingNumber, phone]);
+
   const pay = async () => {
     if (phone.replace(/\D/g, '').length < 10) {
       setMessage('Enter the phone number used for the booking');

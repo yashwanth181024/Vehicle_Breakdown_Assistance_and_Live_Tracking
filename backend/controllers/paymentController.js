@@ -21,21 +21,52 @@ const findBooking = (bookingNumber, phone) =>
 const markPaid = async (req, { orderId, paymentId, signature, method }) => {
   const payment = await Payment.findOne({ razorpayOrderId: orderId });
   if (!payment) return null;
-  if (payment.status === 'paid') return payment; // idempotent
+  if (payment.status === 'paid') {
+    if (method && !payment.method) {
+      payment.method = method;
+      await payment.save();
+    }
+    return payment; // idempotent
+  }
   payment.status = 'paid';
   payment.razorpayPaymentId = paymentId;
-  payment.razorpaySignature = signature;
+  payment.razorpaySignature = signature || '';
   if (method) payment.method = method;
   payment.paidAt = new Date();
   await payment.save();
   await Booking.findByIdAndUpdate(payment.bookingId, { [F.paid]: 'paid' });
-  const io = req.app.get('io');
+  const io = req && req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
   if (io) {
     io.emit('payment:received', {
       bookingNumber: payment.bookingNumber,
       amount: payment.amount,
       paymentId,
     });
+  }
+  return payment;
+};
+
+const syncOrder = async (payment, req = null) => {
+  try {
+    if (!payment || payment.status !== 'created' || !payment.razorpayOrderId) {
+      return payment;
+    }
+    const order = await razorpay.orders.fetch(payment.razorpayOrderId);
+    if (order && order.status === 'paid') {
+      const paymentsRes = await razorpay.orders.fetchPayments(payment.razorpayOrderId);
+      const items = (paymentsRes && paymentsRes.items) || (Array.isArray(paymentsRes) ? paymentsRes : []);
+      const captured = items.find((p) => p.captured || p.status === 'captured') || items[0];
+      if (captured) {
+        return await markPaid(req, {
+          orderId: payment.razorpayOrderId,
+          paymentId: captured.id,
+          signature: '',
+          method: captured.method,
+        });
+      }
+    }
+  } catch (err) {
+    console.error('syncOrder error:', err.message || err);
   }
   return payment;
 };
@@ -49,6 +80,23 @@ exports.createOrder = async (req, res) => {
     const booking = await findBooking(bookingNumber, phone);
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
     if (booking[F.paid] === 'paid') return res.status(400).json({ message: 'Already paid' });
+
+    // If an existing order for this booking was already paid on Razorpay, sync and abort
+    const existingOrders = await Payment.find({
+      bookingNumber: String(bookingNumber),
+      status: 'created',
+      razorpayOrderId: { $exists: true, $ne: null },
+    });
+    for (const p of existingOrders) {
+      const synced = await syncOrder(p, req);
+      if (synced && synced.status === 'paid') {
+        return res.status(400).json({ message: 'Already paid' });
+      }
+    }
+    const refreshedBooking = await Booking.findById(booking._id).select(F.paid);
+    if (refreshedBooking && refreshedBooking[F.paid] === 'paid') {
+      return res.status(400).json({ message: 'Already paid' });
+    }
 
     const fare = Number(F.fare(booking));
     if (!fare || fare <= 0) return res.status(400).json({ message: 'Fare not available yet' });
@@ -93,11 +141,27 @@ exports.verifyPayment = async (req, res) => {
     if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
       return res.status(400).json({ message: 'Invalid signature' });
     }
+
+    let method;
+    try {
+      const rzpPayment = await razorpay.payments.fetch(razorpay_payment_id);
+      method = rzpPayment && rzpPayment.method;
+    } catch (err) {
+      console.error('Error fetching razorpay payment:', err);
+    }
+
     const payment = await markPaid(req, {
       orderId: razorpay_order_id,
       paymentId: razorpay_payment_id,
       signature: razorpay_signature,
+      method,
     });
+
+    if (payment && method && payment.method !== method) {
+      payment.method = method;
+      await payment.save();
+    }
+
     res.json({ success: true, payment });
   } catch (e) {
     console.error('verify', e);
@@ -133,6 +197,16 @@ exports.receipt = async (req, res) => {
     const booking = await findBooking(bookingNumber, phone);
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
+    // Sync any created orders for this booking before building the receipt
+    const createdPayments = await Payment.find({
+      bookingNumber: String(bookingNumber),
+      status: 'created',
+      razorpayOrderId: { $exists: true, $ne: null },
+    });
+    for (const p of createdPayments) {
+      await syncOrder(p, req);
+    }
+
     const payment = await Payment.findOne({ bookingNumber: String(bookingNumber), status: 'paid' });
     const fare = Number(F.fare(booking)) || 0;
     const payUrl = `${process.env.FRONTEND_URL}/pay/${bookingNumber}`;
@@ -165,6 +239,42 @@ exports.receipt = async (req, res) => {
   }
 };
 
+exports.status = async (req, res) => {
+  try {
+    const { bookingNumber } = req.params;
+    const { phone } = req.query;
+    if (!phone) {
+      return res.status(400).json({ message: 'Phone query parameter is required' });
+    }
+    const booking = await findBooking(bookingNumber, phone);
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+    // Sync any created orders for this booking
+    const createdPayments = await Payment.find({
+      bookingNumber: String(bookingNumber),
+      status: 'created',
+      razorpayOrderId: { $exists: true, $ne: null },
+    });
+    for (const p of createdPayments) {
+      await syncOrder(p, req);
+    }
+
+    const payment = await Payment.findOne({ bookingNumber: String(bookingNumber), status: 'paid' });
+    const isPaid = Boolean(payment || booking[F.paid] === 'paid');
+
+    res.json({
+      status: isPaid ? 'paid' : 'unpaid',
+      paid: isPaid,
+      fare: Number(F.fare(booking)) || 0,
+      method: payment ? (payment.method || null) : null,
+      paidAt: payment ? (payment.paidAt || null) : null,
+    });
+  } catch (e) {
+    console.error('status', e);
+    res.status(500).json({ message: 'Could not fetch payment status' });
+  }
+};
+
 exports.exportExcel = async (req, res) => {
   try {
     const payments = await Payment.find().sort({ createdAt: -1 }).lean();
@@ -193,13 +303,48 @@ exports.exportExcel = async (req, res) => {
 
 exports.stats = async (req, res) => {
   try {
+    // Sync 'created' payments from the last 7 days (max 10)
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const recentCreated = await Payment.find({
+      status: 'created',
+      razorpayOrderId: { $exists: true, $ne: null },
+      createdAt: { $gte: sevenDaysAgo },
+    })
+      .sort({ createdAt: -1 })
+      .limit(10);
+
+    await Promise.allSettled(recentCreated.map((p) => syncOrder(p, req)));
+
     const paid = await Payment.find({ status: 'paid' }).lean();
+    const paidBookingNumbers = [];
+    paid.forEach((p) => {
+      paidBookingNumbers.push(String(p.bookingNumber));
+      if (!Number.isNaN(Number(p.bookingNumber))) {
+        paidBookingNumbers.push(Number(p.bookingNumber));
+      }
+    });
+
+    const paidBookingsFromDb = await Booking.find({ [F.paid]: 'paid' }).select('bookingNumber').lean();
+    paidBookingsFromDb.forEach((b) => {
+      paidBookingNumbers.push(String(b.bookingNumber));
+      if (!Number.isNaN(Number(b.bookingNumber))) {
+        paidBookingNumbers.push(Number(b.bookingNumber));
+      }
+    });
+
+    const pendingBookings = await Payment.distinct('bookingNumber', {
+      status: 'created',
+      bookingNumber: { $nin: paidBookingNumbers },
+    });
+
     res.json({
       totalRevenue: paid.reduce((s, p) => s + p.amount, 0),
       paidCount: paid.length,
-      pendingCount: await Payment.countDocuments({ status: 'created' }),
+      pendingCount: pendingBookings.length,
     });
   } catch (e) {
     res.status(500).json({ message: 'Stats failed' });
   }
 };
+
+exports.syncOrder = syncOrder;
