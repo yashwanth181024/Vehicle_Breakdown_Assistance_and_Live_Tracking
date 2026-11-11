@@ -324,7 +324,33 @@ export default function TrackBooking() {
             </div>
           )}
 
-          <PayNowButton booking={booking} />
+          {booking && !['Cancelled', 'Rejected'].includes(status) && (
+            <div className="card">
+              <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+                <h2 style={{ margin: 0 }}>{t('Payment')}</h2>
+                {booking.paymentStatus === 'paid' ? (
+                  <span className="pay-ok">Paid</span>
+                ) : booking.paymentStatus === 'pending' || booking.paymentMethod === 'cash' ? (
+                  <span style={{ background: '#fef3c7', color: '#92400e', padding: '4px 8px', borderRadius: 4, fontWeight: 600, fontSize: '0.85rem' }}>Cash pending</span>
+                ) : (
+                  <span style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 8px', borderRadius: 4, fontWeight: 600, fontSize: '0.85rem' }}>Unpaid</span>
+                )}
+              </div>
+              <div style={{ margin: '12px 0' }}>
+                <p style={{ margin: '0 0 4px' }}>
+                  <strong>{t('Amount:')}</strong> ₹{booking.fare || booking.amount || 'Calculating…'}
+                </p>
+                <p className="muted small" style={{ margin: 0 }}>
+                  <strong>{t('Method:')}</strong> {booking.paymentMethod === 'cash' ? t('Cash to Driver') : booking.paymentMethod === 'online' ? t('Online (Razorpay)') : t('Not selected yet')}
+                </p>
+              </div>
+              {booking.paymentStatus !== 'paid' && (
+                <div style={{ marginTop: 10 }}>
+                  <PayNowButton booking={booking} />
+                </div>
+              )}
+            </div>
+          )}
 
           {status === 'Completed' && (
             <div className="card">

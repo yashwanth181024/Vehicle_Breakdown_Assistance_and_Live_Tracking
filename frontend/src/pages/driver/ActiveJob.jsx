@@ -103,6 +103,45 @@ export default function ActiveJob() {
               {navUrl && <a className="btn btn-outline" href={navUrl} target="_blank" rel="noreferrer">Open in Maps</a>}
             </div>
           </div>
+
+          <div className="card">
+            <div className="row" style={{ justifyContent: 'space-between', alignItems: 'center' }}>
+              <h2 style={{ margin: 0 }}>Payment</h2>
+              {job.paymentStatus === 'paid' ? (
+                <span className="pay-ok" style={{ background: '#dcfce7', color: '#166534', padding: '4px 8px', borderRadius: 4, fontWeight: 600, fontSize: '0.85rem' }}>Paid</span>
+              ) : job.paymentMethod === 'cash' || job.paymentStatus === 'pending' ? (
+                <span style={{ background: '#fef3c7', color: '#92400e', padding: '4px 8px', borderRadius: 4, fontWeight: 600, fontSize: '0.85rem' }}>Cash pending</span>
+              ) : (
+                <span style={{ background: '#fee2e2', color: '#991b1b', padding: '4px 8px', borderRadius: 4, fontWeight: 600, fontSize: '0.85rem' }}>Unpaid</span>
+              )}
+            </div>
+            <div style={{ margin: '10px 0' }}>
+              <p style={{ margin: '0 0 4px' }}><strong>Fare:</strong> ₹{job.fare || job.amount || 'Calculating…'}</p>
+              <p className="muted small" style={{ margin: 0 }}><strong>Method:</strong> {job.paymentMethod === 'cash' ? 'Cash' : job.paymentMethod === 'online' ? 'Online' : 'Not chosen yet'}</p>
+            </div>
+            {job.paymentStatus !== 'paid' && (
+              <button
+                type="button"
+                className="btn btn-ok btn-sm"
+                style={{ marginTop: 6 }}
+                disabled={busy}
+                onClick={async () => {
+                  setBusy(true);
+                  try {
+                    await api.post('/payments/mark-cash-paid', { bookingNumber: job.bookingNumber });
+                    toast.success('Cash payment recorded.');
+                    await reload();
+                  } catch (err) {
+                    toast.error(getErrorMessage(err));
+                  } finally {
+                    setBusy(false);
+                  }
+                }}
+              >
+                Mark Cash Collected & Paid
+              </button>
+            )}
+          </div>
         </div>
 
         <div className="stack" style={{ gap: 18 }}>

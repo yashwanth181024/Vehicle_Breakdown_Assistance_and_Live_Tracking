@@ -13,6 +13,7 @@ async function post(path, body) {
 
 export const createOrder = (bookingNumber, phone) => post('/create-order', { bookingNumber, phone });
 export const verifyPayment = (payload) => post('/verify', payload);
+export const setCashMethod = (bookingNumber, phone) => post('/cash', { bookingNumber, phone });
 export const receiptUrl = (bookingNumber, phone) =>
   `${API}/api/payments/receipt/${encodeURIComponent(bookingNumber)}?phone=${encodeURIComponent(phone)}`;
 

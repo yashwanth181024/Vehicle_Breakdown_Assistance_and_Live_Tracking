@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { useParams, useSearchParams } from 'react-router-dom';
+import { useParams, useSearchParams, Link } from 'react-router-dom';
 import { io } from 'socket.io-client';
 import { API, createOrder, verifyPayment, loadRazorpay, receiptUrl } from '../utils/paymentApi';
 import './payment.css';
@@ -106,6 +106,11 @@ export default function PaymentPage() {
           </>
         )}
         {message && <p className="pay-error">{message}</p>}
+        <div style={{ marginTop: 16, textAlign: 'center' }}>
+          <Link to={`/track/${bookingNumber}?phone=${encodeURIComponent(phone)}`} style={{ color: '#0d4f9e', fontSize: '0.9rem', textDecoration: 'none' }}>
+            ← Back to Tracking
+          </Link>
+        </div>
       </div>
     </div>
   );

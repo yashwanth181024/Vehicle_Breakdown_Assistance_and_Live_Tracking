@@ -5,6 +5,7 @@ const ExcelJS = require('exceljs');
 const razorpay = require('../services/razorpayService');
 const Payment = require('../models/Payment');
 const Booking = require('../models/Booking');
+const { generateReceipt } = require('../services/receiptService');
 
 if (!process.env.RAZORPAY_WEBHOOK_SECRET) {
   console.error('Payment controller error: RAZORPAY_WEBHOOK_SECRET is missing');
@@ -41,13 +42,27 @@ const markPaid = async (req, { orderId, paymentId, signature, method }) => {
   if (method) payment.method = method;
   payment.paidAt = new Date();
   await payment.save();
-  await Booking.findByIdAndUpdate(payment.bookingId, { [F.paid]: 'paid' });
+  await Booking.findByIdAndUpdate(payment.bookingId, {
+    [F.paid]: 'paid',
+    paymentMethod: 'online',
+    paymentStatus: 'paid',
+    paymentId: paymentId || '',
+    orderId: orderId || '',
+    paidAt: payment.paidAt,
+    amount: payment.amount,
+  });
   const io = req && req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
   if (io) {
     io.emit('payment:received', {
       bookingNumber: payment.bookingNumber,
       amount: payment.amount,
       paymentId,
+      method: method || 'online',
+    });
+    io.emit('booking:updated', {
+      bookingNumber: payment.bookingNumber,
+      paymentStatus: 'paid',
+      paymentMethod: 'online',
     });
   }
   return payment;
@@ -97,7 +112,10 @@ exports.createOrder = async (req, res) => {
 
     const booking = await findBooking(bookingNumber, phone);
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
-    if (booking[F.paid] === 'paid') return res.status(400).json({ message: 'Already paid' });
+    if (booking[F.paid] === 'paid' || booking.paymentStatus === 'paid') return res.status(400).json({ message: 'Already paid' });
+    if (['Cancelled', 'Rejected'].includes(booking.status)) {
+      return res.status(400).json({ message: `Cannot pay for a ${booking.status.toLowerCase()} booking` });
+    }
 
     // If an existing order for this booking was already paid on Razorpay, sync and abort
     const existingOrders = await Payment.find({
@@ -111,12 +129,22 @@ exports.createOrder = async (req, res) => {
         return res.status(400).json({ message: 'Already paid' });
       }
     }
-    const refreshedBooking = await Booking.findById(booking._id).select(F.paid);
-    if (refreshedBooking && refreshedBooking[F.paid] === 'paid') {
+    const refreshedBooking = await Booking.findById(booking._id).select(`${F.paid} paymentStatus`);
+    if (refreshedBooking && (refreshedBooking[F.paid] === 'paid' || refreshedBooking.paymentStatus === 'paid')) {
       return res.status(400).json({ message: 'Already paid' });
     }
 
-    const fare = Number(F.fare(booking));
+    let fare = Number(F.fare(booking));
+    if (!fare || fare <= 0) {
+      const Pricing = require('../models/Pricing');
+      const pricing = await Pricing.findOne({ serviceType: booking.serviceType });
+      if (pricing) {
+        fare = pricing.basePrice + (pricing.perKmRate * (booking.distanceKm || 0));
+        booking.fare = fare;
+        booking.amount = fare;
+        await booking.save();
+      }
+    }
     if (!fare || fare <= 0) return res.status(400).json({ message: 'Fare not available yet' });
 
     const order = await razorpay.orders.create({
@@ -220,48 +248,13 @@ exports.receipt = async (req, res) => {
   try {
     const { bookingNumber } = req.params;
     const { phone } = req.query;
+    if (!phone) {
+      return res.status(400).json({ message: 'Phone query parameter is required' });
+    }
     const booking = await findBooking(bookingNumber, phone);
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
-    // Sync any created orders for this booking before building the receipt
-    const createdPayments = await Payment.find({
-      bookingNumber: String(bookingNumber),
-      status: 'created',
-      razorpayOrderId: { $exists: true, $ne: null },
-    });
-    for (const p of createdPayments) {
-      await syncOrder(p, req);
-    }
-
-    const payment = await Payment.findOne({ bookingNumber: String(bookingNumber), status: 'paid' });
-    const fare = Number(F.fare(booking)) || 0;
-    if (!process.env.FRONTEND_URL) {
-      console.error('receipt error: FRONTEND_URL is missing');
-    }
-    const payUrl = `${process.env.FRONTEND_URL || ''}/pay/${bookingNumber}`;
-
-    const doc = new PDFDocument({ margin: 50 });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `inline; filename=receipt-${bookingNumber}.pdf`);
-    doc.pipe(res);
-
-    doc.fontSize(20).text('Breakdown Assistant - Receipt', { align: 'center' }).moveDown();
-    doc.fontSize(12)
-      .text(`Booking No: ${bookingNumber}`)
-      .text(`Customer phone: ${phone}`)
-      .text(`Amount: Rs. ${fare.toFixed(2)}`)
-      .text(`Status: ${payment ? 'PAID' : 'UNPAID'}`);
-
-    if (payment) {
-      doc.text(`Transaction ID: ${payment.razorpayPaymentId}`)
-        .text(`Method: ${payment.method || '-'}`)
-        .text(`Paid at: ${payment.paidAt.toLocaleString('en-IN')}`);
-    } else {
-      const qr = await QRCode.toBuffer(payUrl, { width: 220 });
-      doc.moveDown().text('Scan to pay:').moveDown(0.5).image(qr, { width: 150 })
-        .moveDown().fontSize(9).text(payUrl);
-    }
-    doc.end();
+    await generateReceipt(booking, res, { syncOrderFn: syncOrder, req });
   } catch (e) {
     console.error('receipt', e);
     res.status(500).json({ message: 'Could not generate receipt' });
@@ -289,14 +282,14 @@ exports.status = async (req, res) => {
     }
 
     const payment = await Payment.findOne({ bookingNumber: String(bookingNumber), status: 'paid' });
-    const isPaid = Boolean(payment || booking[F.paid] === 'paid');
+    const isPaid = Boolean(payment || booking[F.paid] === 'paid' || booking.paymentStatus === 'paid');
 
     res.json({
-      status: isPaid ? 'paid' : 'unpaid',
+      status: isPaid ? 'paid' : (booking.paymentStatus === 'pending' ? 'pending' : 'unpaid'),
       paid: isPaid,
       fare: Number(F.fare(booking)) || 0,
-      method: payment ? (payment.method || null) : null,
-      paidAt: payment ? (payment.paidAt || null) : null,
+      method: booking.paymentMethod || (payment ? (payment.method || null) : null),
+      paidAt: booking.paidAt || (payment ? (payment.paidAt || null) : null),
     });
   } catch (e) {
     console.error('status', e);
@@ -374,6 +367,135 @@ exports.stats = async (req, res) => {
   } catch (e) {
     res.status(500).json({ message: 'Stats failed' });
   }
+};
+
+exports.setCashMethod = async (req, res) => {
+  try {
+    const { bookingNumber, phone } = req.body;
+    if (!bookingNumber || !phone) {
+      return res.status(400).json({ message: 'Booking number and phone are required' });
+    }
+    const booking = await findBooking(bookingNumber, phone);
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+    if (booking.paymentStatus === 'paid' || booking[F.paid] === 'paid') {
+      return res.status(400).json({ message: 'Already paid' });
+    }
+    if (['Cancelled', 'Rejected'].includes(booking.status)) {
+      return res.status(400).json({ message: `Cannot set payment for a ${booking.status.toLowerCase()} booking` });
+    }
+
+    booking.paymentMethod = 'cash';
+    booking.paymentStatus = 'pending';
+    await booking.save();
+
+    const io = req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
+    if (io) {
+      io.emit('booking:updated', {
+        bookingNumber: booking.bookingNumber,
+        paymentMethod: 'cash',
+        paymentStatus: 'pending',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Cash payment selected',
+      bookingNumber: booking.bookingNumber,
+      paymentMethod: 'cash',
+      paymentStatus: 'pending',
+    });
+  } catch (err) {
+    console.error('setCashMethod error:', err);
+    res.status(500).json({ message: 'Could not set cash payment' });
+  }
+};
+
+exports.markCashPaid = async (req, res) => {
+  try {
+    const { bookingNumber } = req.body;
+    if (!bookingNumber) {
+      return res.status(400).json({ message: 'Booking number is required' });
+    }
+    const booking = await Booking.findOne({ bookingNumber: Number(bookingNumber) });
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+    if (req.user && req.user.role === 'driver') {
+      if (!booking.assignedDriver || String(booking.assignedDriver) !== String(req.user.id)) {
+        return res.status(403).json({ message: 'Not authorized for this booking' });
+      }
+    }
+
+    if (booking.paymentStatus === 'paid' || booking[F.paid] === 'paid') {
+      return res.status(400).json({ message: 'Booking is already paid' });
+    }
+
+    const amount = Number(F.fare(booking)) || booking.amount || booking.fare || 0;
+    const paidAt = new Date();
+
+    booking.paymentMethod = 'cash';
+    booking.paymentStatus = 'paid';
+    booking[F.paid] = 'paid';
+    booking.paidAt = paidAt;
+    booking.amount = amount;
+    await booking.save();
+
+    await Payment.findOneAndUpdate(
+      { bookingNumber: String(bookingNumber) },
+      {
+        bookingId: booking._id,
+        bookingNumber: String(bookingNumber),
+        customerPhone: booking.phone,
+        amount,
+        method: 'cash',
+        status: 'paid',
+        paidAt,
+      },
+      { upsert: true, new: true }
+    );
+
+    const io = req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
+    if (io) {
+      io.emit('payment:received', {
+        bookingNumber: booking.bookingNumber,
+        amount,
+        method: 'cash',
+      });
+      io.emit('booking:updated', {
+        bookingNumber: booking.bookingNumber,
+        paymentStatus: 'paid',
+        paymentMethod: 'cash',
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Cash payment recorded',
+      bookingNumber: booking.bookingNumber,
+      paymentStatus: 'paid',
+      paymentMethod: 'cash',
+      amount,
+      paidAt,
+    });
+  } catch (err) {
+    console.error('markCashPaid error:', err);
+    res.status(500).json({ message: 'Could not record cash payment' });
+  }
+};
+
+exports.health = (_req, res) => {
+  const keyConfigured = Boolean(process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_ID.trim());
+  const secretConfigured = Boolean(process.env.RAZORPAY_KEY_SECRET && process.env.RAZORPAY_KEY_SECRET.trim());
+  const webhookSecretConfigured = Boolean(process.env.RAZORPAY_WEBHOOK_SECRET && process.env.RAZORPAY_WEBHOOK_SECRET.trim());
+  const frontendUrlConfigured = Boolean(process.env.FRONTEND_URL && process.env.FRONTEND_URL.trim());
+
+  res.json({
+    ok: true,
+    configured: keyConfigured && secretConfigured,
+    keyConfigured,
+    secretConfigured,
+    webhookSecretConfigured,
+    frontendUrlConfigured,
+  });
 };
 
 exports.syncOrder = syncOrder;

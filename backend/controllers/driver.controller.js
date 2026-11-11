@@ -2,7 +2,7 @@
  * Drivers.
  *
  * Admin (role admin):
- *   GET    /api/drivers                 list + search + filters
+ *   GET    /api/drivers                winget up list + search + filters
  *   POST   /api/drivers                 add driver
  *   GET    /api/drivers/:id
  *   PUT    /api/drivers/:id             edit
@@ -93,10 +93,10 @@ exports.verifyDriver = asyncHandler(async (req, res) => {
   const isVerified = status === 'verified';
   const driver = await Driver.findByIdAndUpdate(
     req.params.id,
-    { 
+    {
       verificationStatus: status || 'verified',
       rejectionReason: rejectionReason || null,
-      ...(!isVerified && { isOnline: false }) 
+      ...(!isVerified && { isOnline: false })
     },
     { new: true }
   );
@@ -198,6 +198,11 @@ exports.activeJob = asyncHandler(async (req, res) => {
       destination: booking.destination,
       destinationCoords: fromPoint(booking.destinationCoords),
       assignedAt: booking.assignedAt,
+      fare: booking.fare,
+      amount: booking.amount || booking.fare,
+      paymentMethod: booking.paymentMethod || null,
+      paymentStatus: booking.paymentStatus || 'unpaid',
+      paidAt: booking.paidAt || null,
     },
   });
 });
@@ -208,7 +213,7 @@ exports.myJobs = asyncHandler(async (req, res) => {
   const [rows, total] = await Promise.all([
     Booking.find(filter)
       .sort({ createdAt: -1 }).skip((page - 1) * limit).limit(limit)
-      .select('bookingNumber name serviceType status pickupLocation createdAt assignedAt completedAt rating feedback')
+      .select('bookingNumber name serviceType status pickupLocation createdAt assignedAt completedAt rating feedback fare amount paymentMethod paymentStatus paidAt')
       .lean(),
     Booking.countDocuments(filter),
   ]);
@@ -220,12 +225,14 @@ exports.myEarnings = asyncHandler(async (req, res) => {
   const driverId = req.user.id;
   const [stats] = await Booking.aggregate([
     { $match: { assignedDriver: new mongoose.Types.ObjectId(driverId), status: 'Completed' } },
-    { $group: {
-      _id: null,
-      completedJobs: { $sum: 1 },
-      totalEarned: { $sum: '$fare' },
-      avgRating: { $avg: '$rating' }
-    }}
+    {
+      $group: {
+        _id: null,
+        completedJobs: { $sum: 1 },
+        totalEarned: { $sum: '$fare' },
+        avgRating: { $avg: '$rating' }
+      }
+    }
   ]);
 
   const data = stats ? {
