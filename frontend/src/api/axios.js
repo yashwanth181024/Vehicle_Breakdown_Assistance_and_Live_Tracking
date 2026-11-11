@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-export const API_URL = (import.meta.env.VITE_API_URL || 'http://localhost:5055/api').replace(/\/$/, '');
+export const API_URL = (import.meta.env.VITE_API_URL || (typeof window !== 'undefined' ? `${window.location.origin}/api` : '')).replace(/\/$/, '');
 export const SOCKET_URL = (import.meta.env.VITE_SOCKET_URL || API_URL.replace(/\/api$/, '')).replace(/\/$/, '');
 
 /** Turns a server path such as /uploads/documents/a.jpg into a full URL the browser can load. */

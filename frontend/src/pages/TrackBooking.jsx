@@ -10,6 +10,7 @@ import TrackingMap from '../components/TrackingMap';
 import ChatBox from '../components/ChatBox';
 import ShareLinkButton from '../components/ShareLinkButton';
 import PayNowButton from '../components/PayNowButton.jsx';
+import { receiptUrl } from '../utils/paymentApi';
 import { CLOSED, cleanPhone, formatDateTime, isPhone, statusClass } from '../utils/format';
 import { driverOf, isLive, parseBookingNumber, pickupPoint, pickupText, readRoute, toPoint } from '../utils/booking';
 
@@ -341,7 +342,7 @@ export default function TrackBooking() {
                   <strong>{t('Amount:')}</strong> ₹{booking.fare || booking.amount || 'Calculating…'}
                 </p>
                 <p className="muted small" style={{ margin: 0 }}>
-                  <strong>{t('Method:')}</strong> {booking.paymentMethod === 'cash' ? t('Cash to Driver') : booking.paymentMethod === 'online' ? t('Online (Razorpay)') : t('Not selected yet')}
+                  <strong>{t('Method:')}</strong> {booking.paymentMethod === 'cash' ? t('Cash to Driver') : booking.paymentMethod === 'qr' ? 'QR / UPI' : booking.paymentMethod === 'online' ? t('Online (Razorpay)') : t('Not selected yet')}
                 </p>
               </div>
               {booking.paymentStatus !== 'paid' && (
@@ -360,7 +361,7 @@ export default function TrackBooking() {
                 <h2>{t('Receipt')}</h2>
                 <p className="muted small" style={{ margin: '4px 0 12px' }}>{t('Download a PDF receipt for this booking.')}</p>
                 <a 
-                  href={`${(import.meta.env.VITE_API_URL || 'http://localhost:5055/api')}/bookings/${key.bookingNumber}/receipt?phone=${key.phone}`} 
+                  href={receiptUrl(key.bookingNumber, key.phone)} 
                   target="_blank" 
                   rel="noreferrer" 
                   className="btn btn-outline btn-sm"

@@ -28,6 +28,12 @@ if (key_id && key_secret) {
     payments: {
       fetch: missingError,
     },
+    qrCode: {
+      create: missingError,
+      fetch: missingError,
+      fetchAllPayments: missingError,
+      close: missingError,
+    },
   };
 }
 

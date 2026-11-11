@@ -233,9 +233,48 @@ exports.webhook = async (req, res) => {
       .digest('hex');
     if (sig !== expected) return res.status(400).send('Invalid signature');
     const event = JSON.parse(req.body.toString());
-    if (event.event === 'payment.captured') {
-      const p = event.payload.payment.entity;
-      await markPaid(req, { orderId: p.order_id, paymentId: p.id, signature: sig, method: p.method });
+    if (event.event === 'payment.captured' || event.event === 'qr_code.credited') {
+      const p = (event.payload && event.payload.payment && event.payload.payment.entity) ||
+                (event.payload && event.payload.qr_code && event.payload.qr_code.entity);
+      if (p) {
+        if (p.order_id) {
+          await markPaid(req, { orderId: p.order_id, paymentId: p.id, signature: sig, method: p.method || 'online' });
+        } else if (p.notes && p.notes.bookingNumber) {
+          const booking = await Booking.findOne({ bookingNumber: Number(p.notes.bookingNumber) });
+          if (booking && booking.paymentStatus !== 'paid') {
+            const paidAt = new Date();
+            const amount = Number(p.amount ? p.amount / 100 : (booking.fare || booking.amount || 0));
+            booking.paymentMethod = 'qr';
+            booking.paymentStatus = 'paid';
+            booking[F.paid] = 'paid';
+            booking.paymentId = p.id;
+            booking.paidAt = paidAt;
+            booking.amount = amount;
+            await booking.save();
+
+            await Payment.findOneAndUpdate(
+              { bookingNumber: String(booking.bookingNumber), status: 'paid' },
+              {
+                bookingId: booking._id,
+                bookingNumber: String(booking.bookingNumber),
+                customerPhone: booking.phone,
+                amount,
+                method: 'qr',
+                status: 'paid',
+                razorpayPaymentId: p.id,
+                paidAt,
+              },
+              { upsert: true, new: true }
+            );
+
+            const io = req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
+            if (io) {
+              io.emit('payment:received', { bookingNumber: booking.bookingNumber, amount, paymentId: p.id, method: 'qr' });
+              io.emit('booking:updated', { bookingNumber: booking.bookingNumber, paymentStatus: 'paid', paymentMethod: 'qr' });
+            }
+          }
+        }
+      }
     }
     res.json({ received: true });
   } catch (e) {
@@ -496,6 +535,236 @@ exports.health = (_req, res) => {
     webhookSecretConfigured,
     frontendUrlConfigured,
   });
+};
+
+exports.createQrCode = async (req, res) => {
+  try {
+    const { bookingNumber, phone } = req.body;
+    if (!bookingNumber || !phone) {
+      return res.status(400).json({ message: 'Booking number and phone are required' });
+    }
+
+    const booking = await findBooking(bookingNumber, phone);
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+    if (booking.paymentStatus === 'paid' || booking[F.paid] === 'paid') {
+      return res.status(400).json({ message: 'Already paid' });
+    }
+    if (['Cancelled', 'Rejected'].includes(booking.status)) {
+      return res.status(400).json({ message: `Cannot pay for a ${booking.status.toLowerCase()} booking` });
+    }
+
+    let amount = Number(F.fare(booking));
+    if (!amount || amount <= 0) {
+      const Pricing = require('../models/Pricing');
+      const pricing = await Pricing.findOne({ serviceType: booking.serviceType });
+      if (pricing) {
+        amount = pricing.basePrice + (pricing.perKmRate * (booking.distanceKm || 0));
+        booking.fare = amount;
+        booking.amount = amount;
+        await booking.save();
+      }
+    }
+    if (!amount || amount <= 0) {
+      return res.status(400).json({ message: 'Fare not available yet' });
+    }
+
+    // Check if Razorpay keys are configured
+    if (!process.env.RAZORPAY_KEY_ID || !process.env.RAZORPAY_KEY_SECRET) {
+      return res.json({
+        fallback: true,
+        message: 'Razorpay keys not configured. Falling back to UPI manual payment.',
+        amount,
+      });
+    }
+
+    try {
+      // 15 minutes expiry (max allowed in Razorpay single_use is up to 2 hours)
+      const closeBy = Math.floor(Date.now() / 1000) + (15 * 60);
+      const qr = await razorpay.qrCode.create({
+        type: 'upi_qr',
+        name: `Booking ${bookingNumber}`.slice(0, 40),
+        usage: 'single_use',
+        fixed_amount: true,
+        payment_amount: Math.round(amount * 100),
+        description: `Payment for booking #${bookingNumber}`.slice(0, 255),
+        close_by: closeBy,
+        notes: { bookingNumber: String(bookingNumber) },
+      });
+
+      const qrExpiresAt = new Date(closeBy * 1000);
+      const qrImageUrl = qr.image_url || qr.image_content || '';
+
+      booking.qrId = qr.id;
+      booking.qrExpiresAt = qrExpiresAt;
+      booking.qrImageUrl = qrImageUrl;
+      booking.paymentMethod = 'qr';
+      await booking.save();
+
+      return res.json({
+        success: true,
+        qrId: qr.id,
+        image_url: qrImageUrl,
+        image_content: qr.image_content,
+        amount,
+        expiry: qrExpiresAt,
+      });
+    } catch (rzpErr) {
+      console.error('Razorpay QR Code creation error:', rzpErr.message || rzpErr);
+      return res.json({
+        fallback: true,
+        message: 'Razorpay UPI QR code is not available on this account.',
+        amount,
+      });
+    }
+  } catch (err) {
+    console.error('createQrCode error:', err);
+    res.status(500).json({ message: 'Could not create QR code' });
+  }
+};
+
+exports.qrStatus = async (req, res) => {
+  try {
+    const { qrId } = req.params;
+    const { bookingNumber, phone } = req.query;
+    if (!bookingNumber || !phone) {
+      return res.status(400).json({ message: 'Booking number and phone are required' });
+    }
+
+    const booking = await findBooking(bookingNumber, phone);
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+    const isPaid = Boolean(booking.paymentStatus === 'paid' || booking[F.paid] === 'paid');
+    if (isPaid) {
+      return res.json({
+        status: 'paid',
+        paid: true,
+        amount: booking.fare || booking.amount,
+        method: booking.paymentMethod || 'qr',
+        paidAt: booking.paidAt,
+      });
+    }
+
+    // If QR code was generated via Razorpay
+    if (qrId && qrId !== 'fallback' && process.env.RAZORPAY_KEY_ID && process.env.RAZORPAY_KEY_SECRET) {
+      try {
+        const qr = await razorpay.qrCode.fetch(qrId);
+        if (qr && qr.payments_count_received > 0) {
+          const paymentsRes = await razorpay.qrCode.fetchAllPayments(qrId);
+          const items = (paymentsRes && paymentsRes.items) || (Array.isArray(paymentsRes) ? paymentsRes : []);
+          const captured = items.find((p) => p.status === 'captured') || items[0];
+
+          if (captured && (captured.status === 'captured' || captured.captured)) {
+            const expectedPaise = Math.round((booking.fare || booking.amount || 0) * 100);
+            if (captured.amount >= expectedPaise) {
+              const paidAt = new Date();
+              booking.paymentMethod = 'qr';
+              booking.paymentStatus = 'paid';
+              booking[F.paid] = 'paid';
+              booking.paymentId = captured.id;
+              booking.paidAt = paidAt;
+              await booking.save();
+
+              await Payment.findOneAndUpdate(
+                { bookingNumber: String(bookingNumber), status: 'paid' },
+                {
+                  bookingId: booking._id,
+                  bookingNumber: String(bookingNumber),
+                  customerPhone: booking.phone,
+                  amount: booking.fare || booking.amount,
+                  method: 'qr',
+                  status: 'paid',
+                  razorpayPaymentId: captured.id,
+                  paidAt,
+                },
+                { upsert: true, new: true }
+              );
+
+              const io = req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
+              if (io) {
+                io.emit('payment:received', {
+                  bookingNumber: booking.bookingNumber,
+                  amount: booking.fare || booking.amount,
+                  paymentId: captured.id,
+                  method: 'qr',
+                });
+                io.emit('booking:updated', {
+                  bookingNumber: booking.bookingNumber,
+                  paymentStatus: 'paid',
+                  paymentMethod: 'qr',
+                });
+              }
+
+              return res.json({
+                status: 'paid',
+                paid: true,
+                amount: booking.fare || booking.amount,
+                method: 'qr',
+                paidAt,
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error('qrStatus Razorpay fetch error:', e.message || e);
+      }
+    }
+
+    const isExpired = booking.qrExpiresAt && new Date() > new Date(booking.qrExpiresAt);
+    return res.json({
+      status: isExpired ? 'expired' : (booking.paymentStatus === 'pending' ? 'pending' : 'unpaid'),
+      paid: false,
+      amount: booking.fare || booking.amount,
+      method: booking.paymentMethod || null,
+      paidAt: null,
+    });
+  } catch (err) {
+    console.error('qrStatus error:', err);
+    res.status(500).json({ message: 'Could not fetch QR status' });
+  }
+};
+
+exports.getUpiLink = async (req, res) => {
+  try {
+    const { bookingNumber, phone } = req.query;
+    if (!bookingNumber || !phone) {
+      return res.status(400).json({ message: 'Booking number and phone are required' });
+    }
+
+    const booking = await findBooking(bookingNumber, phone);
+    if (!booking) return res.status(404).json({ message: 'Booking not found' });
+
+    let amount = Number(F.fare(booking));
+    if (!amount || amount <= 0) {
+      const Pricing = require('../models/Pricing');
+      const pricing = await Pricing.findOne({ serviceType: booking.serviceType });
+      if (pricing) {
+        amount = pricing.basePrice + (pricing.perKmRate * (booking.distanceKm || 0));
+        booking.fare = amount;
+        booking.amount = amount;
+      }
+    }
+
+    const upiId = process.env.UPI_ID || 'breakdownassistant@upi';
+    const payeeName = process.env.UPI_PAYEE_NAME || 'Vehicle Breakdown Assistant';
+    const note = `Booking #${bookingNumber}`;
+    const upiLink = `upi://pay?pa=${encodeURIComponent(upiId)}&pn=${encodeURIComponent(payeeName)}&am=${(amount || 0).toFixed(2)}&cu=INR&tn=${encodeURIComponent(note)}`;
+
+    booking.paymentMethod = 'qr';
+    booking.paymentStatus = 'pending';
+    await booking.save();
+
+    res.json({
+      success: true,
+      upiLink,
+      amount: amount || 0,
+      upiId,
+      payeeName,
+      bookingNumber: booking.bookingNumber,
+    });
+  } catch (err) {
+    console.error('getUpiLink error:', err);
+    res.status(500).json({ message: 'Could not generate UPI link' });
+  }
 };
 
 exports.syncOrder = syncOrder;

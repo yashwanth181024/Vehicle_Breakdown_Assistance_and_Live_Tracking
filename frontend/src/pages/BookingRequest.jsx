@@ -137,7 +137,8 @@ export default function BookingRequest() {
 
   if (confirmedBooking) {
     const { bookingNumber, phone, amount } = confirmedBooking;
-    const trackUrl = getTrackingUrl(bookingNumber, phone);
+    const customerPhone = phone || cleanPhone(form.phone);
+    const trackUrl = getTrackingUrl(bookingNumber, customerPhone);
 
     const onPayCash = async () => {
       setBusy(true);
@@ -175,9 +176,18 @@ export default function BookingRequest() {
               type="button"
               className="btn btn-signal btn-block"
               style={{ minHeight: 48, fontSize: '1.05rem' }}
-              onClick={() => navigate(`/pay/${bookingNumber}?phone=${encodeURIComponent(phone)}`)}
+              onClick={() => navigate(`/pay/${bookingNumber}?phone=${encodeURIComponent(customerPhone)}`)}
             >
               💳 {t('Pay Online (Razorpay)')}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              style={{ minHeight: 48, fontSize: '1.05rem' }}
+              onClick={() => navigate(`/pay/${bookingNumber}?phone=${encodeURIComponent(customerPhone)}&mode=qr`)}
+            >
+              📱 {t('Pay by Scan QR')}
             </button>
 
             <button

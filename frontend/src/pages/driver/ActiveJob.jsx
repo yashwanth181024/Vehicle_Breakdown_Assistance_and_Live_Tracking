@@ -117,7 +117,7 @@ export default function ActiveJob() {
             </div>
             <div style={{ margin: '10px 0' }}>
               <p style={{ margin: '0 0 4px' }}><strong>Fare:</strong> ₹{job.fare || job.amount || 'Calculating…'}</p>
-              <p className="muted small" style={{ margin: 0 }}><strong>Method:</strong> {job.paymentMethod === 'cash' ? 'Cash' : job.paymentMethod === 'online' ? 'Online' : 'Not chosen yet'}</p>
+              <p className="muted small" style={{ margin: 0 }}><strong>Method:</strong> {job.paymentMethod === 'cash' ? 'Cash' : job.paymentMethod === 'qr' ? 'QR / UPI' : job.paymentMethod === 'online' ? 'Online' : 'Not chosen yet'}</p>
             </div>
             {job.paymentStatus !== 'paid' && (
               <button

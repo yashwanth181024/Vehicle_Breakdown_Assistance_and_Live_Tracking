@@ -30,7 +30,7 @@ function Details({ booking, onClose, onPaid }) {
           {b.driver && <div><dt>Driver</dt><dd>{b.driver.name || ''}</dd></div>}
           <div><dt>Requested</dt><dd>{formatDateTime(b.createdAt)}</dd></div>
           <div><dt>Fare</dt><dd>₹{b.fare || b.amount || '-'}</dd></div>
-          <div><dt>Payment</dt><dd><strong>{b.paymentStatus || 'unpaid'}</strong> {b.paymentMethod ? `(${b.paymentMethod})` : ''}</dd></div>
+          <div><dt>Payment</dt><dd><strong>{b.paymentStatus || 'unpaid'}</strong> {b.paymentMethod ? `(${b.paymentMethod === 'qr' ? 'QR / UPI' : b.paymentMethod})` : ''}</dd></div>
         </dl>
         {b.description && <p><strong>Notes:</strong> {b.description}</p>}
         <h3>Progress</h3>
@@ -167,7 +167,7 @@ export default function AdminRequests() {
                             : { background: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: 4, fontWeight: 600, fontSize: '0.8rem' }
                         }
                       >
-                        {b.paymentStatus === 'paid' ? 'Paid' : b.paymentStatus === 'pending' || b.paymentMethod === 'cash' ? 'Cash pending' : 'Unpaid'}
+                        {b.paymentStatus === 'paid' ? `Paid (${b.paymentMethod === 'qr' ? 'QR / UPI' : b.paymentMethod || 'online'})` : (b.paymentStatus === 'pending' || b.paymentMethod === 'cash' || b.paymentMethod === 'qr') ? (b.paymentMethod === 'qr' ? 'QR / UPI pending' : 'Cash pending') : 'Unpaid'}
                       </span>
                     </td>
                     <td>{formatDateTime(b.createdAt)}</td>

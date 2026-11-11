@@ -1,4 +1,6 @@
-export const API = (import.meta.env.VITE_SOCKET_URL || (import.meta.env.VITE_API_URL || 'http://localhost:5055').replace(/\/api\/?$/, '')).replace(/\/$/, '');
+import { API_URL, SOCKET_URL } from '../api/axios';
+
+export const API = SOCKET_URL || (API_URL ? API_URL.replace(/\/api\/?$/, '') : '');
 
 async function post(path, body) {
   const res = await fetch(`${API}/api/payments${path}`, {
@@ -14,6 +16,18 @@ async function post(path, body) {
 export const createOrder = (bookingNumber, phone) => post('/create-order', { bookingNumber, phone });
 export const verifyPayment = (payload) => post('/verify', payload);
 export const setCashMethod = (bookingNumber, phone) => post('/cash', { bookingNumber, phone });
+export const createQrCode = (bookingNumber, phone) => post('/qr/create', { bookingNumber, phone });
+
+export async function fetchQrStatus(qrId, bookingNumber, phone) {
+  const res = await fetch(`${API}/api/payments/qr/status/${encodeURIComponent(qrId)}?bookingNumber=${encodeURIComponent(bookingNumber)}&phone=${encodeURIComponent(phone)}`);
+  return await res.json().catch(() => ({}));
+}
+
+export async function fetchUpiLink(bookingNumber, phone) {
+  const res = await fetch(`${API}/api/payments/upi-link?bookingNumber=${encodeURIComponent(bookingNumber)}&phone=${encodeURIComponent(phone)}`);
+  return await res.json().catch(() => ({}));
+}
+
 export const receiptUrl = (bookingNumber, phone) =>
   `${API}/api/payments/receipt/${encodeURIComponent(bookingNumber)}?phone=${encodeURIComponent(phone)}`;
 

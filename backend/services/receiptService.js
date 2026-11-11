@@ -79,6 +79,8 @@ async function generateReceipt(booking, res, { syncOrderFn = null, req = null } 
 
   const paymentMethodText = booking.paymentMethod === 'cash'
     ? 'Cash to Driver'
+    : booking.paymentMethod === 'qr'
+    ? 'QR / UPI'
     : (payment && payment.method)
     ? `Online (${payment.method})`
     : booking.paymentMethod === 'online'
