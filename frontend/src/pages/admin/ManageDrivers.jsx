@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import api, { getErrorMessage } from '../../api/axios';
+import api, { assetUrl, getErrorMessage } from '../../api/axios';
 import { useToast } from '../../context/ToastContext';
 import { VEHICLE_TYPES, cleanPhone, isPhone } from '../../utils/format';
 import { idOf, listOf } from '../../utils/adapt';
@@ -181,7 +181,7 @@ export default function ManageDrivers() {
               <ul style={{ marginBottom: 20 }}>
                 {reviewing.documents.map((d, i) => (
                   <li key={i}>
-                    <a href={`${import.meta.env.VITE_API_URL.replace('/api', '')}${d.url}`} target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>{d.name}</a> - {d.status}
+                    <a href={assetUrl(d.url)} target="_blank" rel="noreferrer" style={{ textDecoration: 'underline' }}>{d.name}</a> - {d.status}
                   </li>
                 ))}
               </ul>

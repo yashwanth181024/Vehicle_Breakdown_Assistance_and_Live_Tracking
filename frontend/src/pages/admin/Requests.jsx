@@ -48,7 +48,10 @@ function Details({ booking, onClose, onPaid }) {
               className="btn btn-ok btn-sm"
               onClick={async () => {
                 try {
-                  await api.post('/payments/mark-cash-paid', { bookingNumber: b.bookingNumber });
+                  await api.post('/payments/mark-cash-paid', {
+                    bookingNumber: b.bookingNumber,
+                    method: b.paymentMethod === 'qr' ? 'qr' : 'cash',
+                  });
                   toast.success(`Booking ${b.bookingNumber} marked as paid.`);
                   if (onPaid) onPaid();
                   onClose();
@@ -57,7 +60,7 @@ function Details({ booking, onClose, onPaid }) {
                 }
               }}
             >
-              Mark Cash as Paid
+              {b.paymentMethod === 'qr' ? 'Mark UPI as Paid' : 'Mark Cash as Paid'}
             </button>
           )}
           <button type="button" className="btn btn-outline" onClick={onClose}>Close</button>

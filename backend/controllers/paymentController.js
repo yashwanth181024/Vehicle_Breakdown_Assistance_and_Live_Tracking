@@ -26,46 +26,111 @@ const F = {
 const findBooking = (bookingNumber, phone) =>
   Booking.findOne({ [F.number]: bookingNumber, [F.phone]: phone });
 
-const markPaid = async (req, { orderId, paymentId, signature, method }) => {
-  const payment = await Payment.findOne({ razorpayOrderId: orderId });
-  if (!payment) return null;
-  if (payment.status === 'paid') {
-    if (method && !payment.method) {
-      payment.method = method;
+const markPaid = async (req, { orderId, paymentId, signature, method, bookingNumber, amount }) => {
+  // 1. Locate payment record if exists
+  let payment = null;
+  if (orderId) {
+    payment = await Payment.findOne({ razorpayOrderId: orderId });
+  } else if (paymentId) {
+    payment = await Payment.findOne({ razorpayPaymentId: paymentId });
+  }
+
+  // 2. Locate booking
+  let booking = null;
+  if (bookingNumber) {
+    booking = await Booking.findOne({ [F.number]: Number(bookingNumber) });
+  } else if (payment && payment.bookingId) {
+    booking = await Booking.findById(payment.bookingId);
+  }
+
+  if (!booking && !payment) return null;
+  if (!booking && payment) {
+    booking = await Booking.findOne({ [F.number]: Number(payment.bookingNumber) });
+  }
+  if (!booking) return payment;
+
+  // RULE: A paid booking must never be changed again!
+  const isAlreadyPaid = booking.paymentStatus === 'paid' || booking[F.paid] === 'paid';
+  if (isAlreadyPaid) {
+    if (payment && payment.status !== 'paid') {
+      payment.status = 'paid';
+      if (paymentId && !payment.razorpayPaymentId) payment.razorpayPaymentId = paymentId;
+      if (method && !payment.method) payment.method = method;
       await payment.save();
     }
-    return payment; // idempotent
+    return payment || { status: 'paid', booking };
   }
-  payment.status = 'paid';
-  payment.razorpayPaymentId = paymentId;
-  payment.razorpaySignature = signature || '';
-  if (method) payment.method = method;
-  payment.paidAt = new Date();
-  await payment.save();
-  await Booking.findByIdAndUpdate(payment.bookingId, {
-    [F.paid]: 'paid',
-    paymentMethod: 'online',
-    paymentStatus: 'paid',
-    paymentId: paymentId || '',
-    orderId: orderId || '',
-    paidAt: payment.paidAt,
-    amount: payment.amount,
-  });
+
+  // Final values
+  const finalMethod = method || booking.paymentMethod || 'online';
+  const finalAmount = amount || (payment && payment.amount) || Number(F.fare(booking)) || booking.amount || booking.fare || 0;
+  const paidAt = new Date();
+
+  // Atomically update booking only if not already paid
+  const updatedBooking = await Booking.findOneAndUpdate(
+    { _id: booking._id, paymentStatus: { $ne: 'paid' } },
+    {
+      [F.paid]: 'paid',
+      paymentMethod: finalMethod,
+      paymentStatus: 'paid',
+      paymentId: paymentId || booking.paymentId || '',
+      orderId: orderId || booking.orderId || '',
+      paidAt,
+      amount: finalAmount,
+    },
+    { new: true }
+  );
+
+  if (!updatedBooking) {
+    // Concurrently updated to paid by another handler
+    return payment || { status: 'paid', booking };
+  }
+
+  // Save or update payment document
+  if (!payment) {
+    payment = await Payment.findOne({ bookingNumber: String(booking.bookingNumber) });
+  }
+
+  if (payment) {
+    payment.status = 'paid';
+    if (paymentId) payment.razorpayPaymentId = paymentId;
+    if (orderId && !payment.razorpayOrderId) payment.razorpayOrderId = orderId;
+    if (signature) payment.razorpaySignature = signature;
+    if (finalMethod) payment.method = finalMethod;
+    payment.paidAt = payment.paidAt || paidAt;
+    payment.amount = finalAmount;
+    await payment.save();
+  } else {
+    payment = await Payment.create({
+      bookingId: booking._id,
+      bookingNumber: String(booking.bookingNumber),
+      customerPhone: booking.phone,
+      amount: finalAmount,
+      method: finalMethod,
+      status: 'paid',
+      razorpayPaymentId: paymentId || '',
+      razorpayOrderId: orderId || '',
+      razorpaySignature: signature || '',
+      paidAt,
+    });
+  }
+
   const io = req && req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
   if (io) {
     io.emit('payment:received', {
-      bookingNumber: payment.bookingNumber,
-      amount: payment.amount,
-      paymentId,
-      method: method || 'online',
+      bookingNumber: booking.bookingNumber,
+      amount: finalAmount,
+      paymentId: paymentId || '',
+      method: finalMethod,
     });
     io.emit('booking:updated', {
-      bookingNumber: payment.bookingNumber,
+      bookingNumber: booking.bookingNumber,
       paymentStatus: 'paid',
-      paymentMethod: 'online',
+      paymentMethod: finalMethod,
     });
   }
-  return payment;
+
+  return payment || { status: 'paid', booking: updatedBooking };
 };
 
 const syncOrder = async (payment, req = null) => {
@@ -226,52 +291,65 @@ exports.webhook = async (req, res) => {
       console.error('webhook error: RAZORPAY_WEBHOOK_SECRET is missing');
       return res.status(500).send('Webhook secret is not configured');
     }
+
     const sig = req.headers['x-razorpay-signature'];
+    if (!sig || typeof sig !== 'string') {
+      return res.status(400).send('Missing signature header');
+    }
+
+    const bodyBuffer = Buffer.isBuffer(req.body)
+      ? req.body
+      : Buffer.from(typeof req.body === 'string' ? req.body : JSON.stringify(req.body || {}));
+
     const expected = crypto
       .createHmac('sha256', process.env.RAZORPAY_WEBHOOK_SECRET)
-      .update(req.body)
+      .update(bodyBuffer)
       .digest('hex');
-    if (sig !== expected) return res.status(400).send('Invalid signature');
-    const event = JSON.parse(req.body.toString());
+
+    const sigBuf = Buffer.from(sig);
+    const expBuf = Buffer.from(expected);
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return res.status(400).send('Invalid signature');
+    }
+
+    let event;
+    try {
+      event = JSON.parse(bodyBuffer.toString('utf8'));
+    } catch (parseErr) {
+      return res.status(400).send('Invalid JSON payload');
+    }
+
     if (event.event === 'payment.captured' || event.event === 'qr_code.credited') {
-      const p = (event.payload && event.payload.payment && event.payload.payment.entity) ||
-                (event.payload && event.payload.qr_code && event.payload.qr_code.entity);
+      const paymentEntity = event.payload && event.payload.payment && event.payload.payment.entity;
+      const qrEntity = event.payload && event.payload.qr_code && event.payload.qr_code.entity;
+      const p = paymentEntity || qrEntity;
+
       if (p) {
-        if (p.order_id) {
-          await markPaid(req, { orderId: p.order_id, paymentId: p.id, signature: sig, method: p.method || 'online' });
-        } else if (p.notes && p.notes.bookingNumber) {
-          const booking = await Booking.findOne({ bookingNumber: Number(p.notes.bookingNumber) });
-          if (booking && booking.paymentStatus !== 'paid') {
-            const paidAt = new Date();
-            const amount = Number(p.amount ? p.amount / 100 : (booking.fare || booking.amount || 0));
-            booking.paymentMethod = 'qr';
-            booking.paymentStatus = 'paid';
-            booking[F.paid] = 'paid';
-            booking.paymentId = p.id;
-            booking.paidAt = paidAt;
-            booking.amount = amount;
-            await booking.save();
+        if (paymentEntity && paymentEntity.order_id) {
+          await markPaid(req, {
+            orderId: paymentEntity.order_id,
+            paymentId: paymentEntity.id,
+            signature: sig,
+            method: paymentEntity.method || 'online',
+            amount: paymentEntity.amount ? paymentEntity.amount / 100 : undefined,
+          });
+        } else {
+          const bookingNum =
+            (paymentEntity && paymentEntity.notes && paymentEntity.notes.bookingNumber) ||
+            (qrEntity && qrEntity.notes && qrEntity.notes.bookingNumber);
+          const paymentId = (paymentEntity && paymentEntity.id) || (qrEntity && qrEntity.id) || '';
+          const amount =
+            (paymentEntity && paymentEntity.amount ? paymentEntity.amount / 100 : undefined) ||
+            (qrEntity && qrEntity.payments_amount_received ? qrEntity.payments_amount_received / 100 : undefined);
 
-            await Payment.findOneAndUpdate(
-              { bookingNumber: String(booking.bookingNumber), status: 'paid' },
-              {
-                bookingId: booking._id,
-                bookingNumber: String(booking.bookingNumber),
-                customerPhone: booking.phone,
-                amount,
-                method: 'qr',
-                status: 'paid',
-                razorpayPaymentId: p.id,
-                paidAt,
-              },
-              { upsert: true, new: true }
-            );
-
-            const io = req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
-            if (io) {
-              io.emit('payment:received', { bookingNumber: booking.bookingNumber, amount, paymentId: p.id, method: 'qr' });
-              io.emit('booking:updated', { bookingNumber: booking.bookingNumber, paymentStatus: 'paid', paymentMethod: 'qr' });
-            }
+          if (bookingNum) {
+            await markPaid(req, {
+              bookingNumber: bookingNum,
+              paymentId,
+              signature: sig,
+              method: 'qr',
+              amount,
+            });
           }
         }
       }
@@ -451,7 +529,7 @@ exports.setCashMethod = async (req, res) => {
 
 exports.markCashPaid = async (req, res) => {
   try {
-    const { bookingNumber } = req.body;
+    const { bookingNumber, method } = req.body;
     if (!bookingNumber) {
       return res.status(400).json({ message: 'Booking number is required' });
     }
@@ -468,52 +546,26 @@ exports.markCashPaid = async (req, res) => {
       return res.status(400).json({ message: 'Booking is already paid' });
     }
 
+    const finalMethod = (method === 'qr' || booking.paymentMethod === 'qr') ? 'qr' : 'cash';
     const amount = Number(F.fare(booking)) || booking.amount || booking.fare || 0;
-    const paidAt = new Date();
 
-    booking.paymentMethod = 'cash';
-    booking.paymentStatus = 'paid';
-    booking[F.paid] = 'paid';
-    booking.paidAt = paidAt;
-    booking.amount = amount;
-    await booking.save();
+    await markPaid(req, {
+      bookingNumber: booking.bookingNumber,
+      paymentId: finalMethod === 'qr' ? 'UPI_MANUAL' : 'CASH_COLLECTED',
+      method: finalMethod,
+      amount,
+    });
 
-    await Payment.findOneAndUpdate(
-      { bookingNumber: String(bookingNumber) },
-      {
-        bookingId: booking._id,
-        bookingNumber: String(bookingNumber),
-        customerPhone: booking.phone,
-        amount,
-        method: 'cash',
-        status: 'paid',
-        paidAt,
-      },
-      { upsert: true, new: true }
-    );
-
-    const io = req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
-    if (io) {
-      io.emit('payment:received', {
-        bookingNumber: booking.bookingNumber,
-        amount,
-        method: 'cash',
-      });
-      io.emit('booking:updated', {
-        bookingNumber: booking.bookingNumber,
-        paymentStatus: 'paid',
-        paymentMethod: 'cash',
-      });
-    }
+    const updatedBooking = await Booking.findOne({ bookingNumber: Number(bookingNumber) });
 
     res.json({
       success: true,
-      message: 'Cash payment recorded',
-      bookingNumber: booking.bookingNumber,
+      message: finalMethod === 'qr' ? 'UPI payment recorded' : 'Cash payment recorded',
+      bookingNumber: updatedBooking ? updatedBooking.bookingNumber : booking.bookingNumber,
       paymentStatus: 'paid',
-      paymentMethod: 'cash',
-      amount,
-      paidAt,
+      paymentMethod: finalMethod,
+      amount: (updatedBooking && (updatedBooking.amount || updatedBooking.fare)) || amount,
+      paidAt: (updatedBooking && updatedBooking.paidAt) || new Date(),
     });
   } catch (err) {
     console.error('markCashPaid error:', err);
@@ -633,6 +685,20 @@ exports.qrStatus = async (req, res) => {
     const booking = await findBooking(bookingNumber, phone);
     if (!booking) return res.status(404).json({ message: 'Booking not found' });
 
+    // Verify that the qrId belongs to this booking
+    const reqQrId = String(qrId || '').trim();
+    const bookingQrId = booking.qrId ? String(booking.qrId).trim() : null;
+
+    if (reqQrId !== 'fallback') {
+      if (!bookingQrId || bookingQrId !== reqQrId) {
+        return res.status(400).json({ message: 'QR ID does not belong to this booking' });
+      }
+    } else {
+      if (bookingQrId && bookingQrId !== 'fallback') {
+        return res.status(400).json({ message: 'QR ID does not belong to this booking' });
+      }
+    }
+
     const isPaid = Boolean(booking.paymentStatus === 'paid' || booking[F.paid] === 'paid');
     if (isPaid) {
       return res.json({
@@ -656,50 +722,20 @@ exports.qrStatus = async (req, res) => {
           if (captured && (captured.status === 'captured' || captured.captured)) {
             const expectedPaise = Math.round((booking.fare || booking.amount || 0) * 100);
             if (captured.amount >= expectedPaise) {
-              const paidAt = new Date();
-              booking.paymentMethod = 'qr';
-              booking.paymentStatus = 'paid';
-              booking[F.paid] = 'paid';
-              booking.paymentId = captured.id;
-              booking.paidAt = paidAt;
-              await booking.save();
+              await markPaid(req, {
+                bookingNumber: booking.bookingNumber,
+                paymentId: captured.id,
+                method: 'qr',
+                amount: captured.amount ? captured.amount / 100 : (booking.fare || booking.amount),
+              });
 
-              await Payment.findOneAndUpdate(
-                { bookingNumber: String(bookingNumber), status: 'paid' },
-                {
-                  bookingId: booking._id,
-                  bookingNumber: String(bookingNumber),
-                  customerPhone: booking.phone,
-                  amount: booking.fare || booking.amount,
-                  method: 'qr',
-                  status: 'paid',
-                  razorpayPaymentId: captured.id,
-                  paidAt,
-                },
-                { upsert: true, new: true }
-              );
-
-              const io = req.app && typeof req.app.get === 'function' ? req.app.get('io') : null;
-              if (io) {
-                io.emit('payment:received', {
-                  bookingNumber: booking.bookingNumber,
-                  amount: booking.fare || booking.amount,
-                  paymentId: captured.id,
-                  method: 'qr',
-                });
-                io.emit('booking:updated', {
-                  bookingNumber: booking.bookingNumber,
-                  paymentStatus: 'paid',
-                  paymentMethod: 'qr',
-                });
-              }
-
+              const updatedBooking = await Booking.findOne({ bookingNumber: Number(bookingNumber) });
               return res.json({
                 status: 'paid',
                 paid: true,
-                amount: booking.fare || booking.amount,
-                method: 'qr',
-                paidAt,
+                amount: updatedBooking ? (updatedBooking.fare || updatedBooking.amount) : (booking.fare || booking.amount),
+                method: updatedBooking ? (updatedBooking.paymentMethod || 'qr') : 'qr',
+                paidAt: updatedBooking ? updatedBooking.paidAt : new Date(),
               });
             }
           }

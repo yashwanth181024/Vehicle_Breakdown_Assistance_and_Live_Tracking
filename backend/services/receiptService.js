@@ -2,6 +2,14 @@ const PDFDocument = require('pdfkit');
 const QRCode = require('qrcode');
 const Payment = require('../models/Payment');
 
+const getFrontendUrl = () => {
+  const f = process.env.FRONTEND_URL && process.env.FRONTEND_URL.trim();
+  if (f) return f.replace(/\/$/, '');
+  const c = process.env.CLIENT_URL && process.env.CLIENT_URL.trim();
+  if (c) return c.split(',')[0].trim().replace(/\/$/, '');
+  return '';
+};
+
 /**
  * Generates a unified PDF receipt containing full booking & payment details.
  */
@@ -28,7 +36,7 @@ async function generateReceipt(booking, res, { syncOrderFn = null, req = null } 
   const isPaid = Boolean(payment || booking.paymentStatus === 'paid');
   const fare = Number(booking.fare || booking.amount || (payment && payment.amount) || 0);
 
-  const frontendUrl = process.env.FRONTEND_URL || '';
+  const frontendUrl = getFrontendUrl();
   const payUrl = `${frontendUrl}/pay/${bookingNumber}?phone=${encodeURIComponent(booking.phone || '')}`;
 
   const doc = new PDFDocument({ margin: 50 });
@@ -73,19 +81,19 @@ async function generateReceipt(booking, res, { syncOrderFn = null, req = null } 
   const paymentStatusText = isPaid
     ? 'PAID'
     : (booking.paymentStatus === 'pending' || booking.paymentMethod === 'cash')
-    ? 'CASH PENDING'
-    : 'UNPAID';
+      ? 'CASH PENDING'
+      : 'UNPAID';
   doc.text(`Payment Status: ${paymentStatusText}`);
 
   const paymentMethodText = booking.paymentMethod === 'cash'
     ? 'Cash to Driver'
     : booking.paymentMethod === 'qr'
-    ? 'QR / UPI'
-    : (payment && payment.method)
-    ? `Online (${payment.method})`
-    : booking.paymentMethod === 'online'
-    ? 'Online'
-    : (isPaid ? 'Paid' : 'Not selected yet');
+      ? 'QR / UPI'
+      : (payment && payment.method)
+        ? `Online (${payment.method})`
+        : booking.paymentMethod === 'online'
+          ? 'Online'
+          : (isPaid ? 'Paid' : 'Not selected yet');
   doc.text(`Payment Method: ${paymentMethodText}`);
 
   if (isPaid) {

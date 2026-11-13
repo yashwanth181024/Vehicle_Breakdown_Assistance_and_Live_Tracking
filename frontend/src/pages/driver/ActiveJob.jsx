@@ -128,8 +128,11 @@ export default function ActiveJob() {
                 onClick={async () => {
                   setBusy(true);
                   try {
-                    await api.post('/payments/mark-cash-paid', { bookingNumber: job.bookingNumber });
-                    toast.success('Cash payment recorded.');
+                    await api.post('/payments/mark-cash-paid', {
+                      bookingNumber: job.bookingNumber,
+                      method: job.paymentMethod === 'qr' ? 'qr' : 'cash',
+                    });
+                    toast.success(job.paymentMethod === 'qr' ? 'UPI payment recorded.' : 'Cash payment recorded.');
                     await reload();
                   } catch (err) {
                     toast.error(getErrorMessage(err));
@@ -138,7 +141,7 @@ export default function ActiveJob() {
                   }
                 }}
               >
-                Mark Cash Collected & Paid
+                {job.paymentMethod === 'qr' ? 'Mark UPI as Paid' : 'Mark Cash Collected & Paid'}
               </button>
             )}
           </div>

@@ -7,7 +7,7 @@ const staffGuard = protect(ROLES.DRIVER, ROLES.ADMIN);
 const router = express.Router();
 
 router.get('/health', c.health);
-router.post('/webhook', express.raw({ type: 'application/json' }), c.webhook);
+router.post('/webhook', express.raw({ type: '*/*' }), c.webhook);
 router.post('/create-order', express.json(), c.createOrder);
 router.post('/verify', express.json(), c.verifyPayment);
 router.post('/qr/create', express.json(), c.createQrCode);
