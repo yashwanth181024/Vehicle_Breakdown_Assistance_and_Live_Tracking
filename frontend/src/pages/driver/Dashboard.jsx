@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import api, { getErrorMessage } from '../../api/axios';
+import api, { assetUrl, getErrorMessage } from '../../api/axios';
 import { useToast } from '../../context/ToastContext';
 import useDriverStatus from '../../hooks/useDriverStatus';
 import { statusClass } from '../../utils/format';
@@ -130,7 +130,7 @@ export default function DriverDashboard() {
                 <ul style={{ margin: '8px 0 0', paddingLeft: 20 }}>
                   {profile.documents.map((d, i) => (
                     <li key={i}>
-                      <a href={`${import.meta.env.VITE_API_URL.replace('/api', '')}${d.url}`} target="_blank" rel="noreferrer">{d.name}</a> - {d.status}
+                      <a href={assetUrl(d.url)} target="_blank" rel="noreferrer">{d.name}</a> - {d.status}
                     </li>
                   ))}
                 </ul>

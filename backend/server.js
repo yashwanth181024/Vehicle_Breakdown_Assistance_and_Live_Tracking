@@ -33,7 +33,14 @@ dispatchService.init(io);
 app.set('trust proxy', 1); // needed behind Render's proxy so rate limiting sees the real IP
 app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
 app.use(cors(corsOptions));
-app.use('/api/payments', paymentRoutes);
+app.use(
+  '/api/payments',
+  (req, res, next) => {
+    if (req.path === '/webhook' || req.path === '/webhook/') return next();
+    return apiLimiter(req, res, next);
+  },
+  paymentRoutes
+);
 app.use(compression());
 app.use(express.json({ limit: '1mb' }));
 app.use(express.urlencoded({ extended: true }));

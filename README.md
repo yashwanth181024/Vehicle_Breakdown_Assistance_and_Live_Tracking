@@ -40,7 +40,8 @@ The system was verified with 14 test cases across 8 testing levels.
 - Booking confirmation and status tracking
 - Live driver tracking with route on the map, and real-time chat with the driver
 - Share location on or off, and share a tracking link
-- Generated service receipt after a job
+- Flexible payment options: online (Razorpay cards/netbanking/wallets), scan & pay QR/UPI with instant auto-confirmation, or cash to driver
+- Generated service & payment receipt (PDF) with dynamic online payment QR
 - Interface in English, Hindi, and Kannada
 - Installable as a PWA on mobile
 
@@ -48,13 +49,15 @@ The system was verified with 14 test cases across 8 testing levels.
 - Separate login and dashboard
 - Accept or reject requests within a one-minute offer window, after which the request moves on
 - Current job view, completed and cancelled jobs, and earnings
+- Confirm cash and manual UPI payments collected from customers
 
 **Admins**
 - Separate login and dashboard
 - Driver management and request management (pending and assigned)
 - Manual dispatch fallback when no driver accepts an offer
-- Analytics dashboard
+- Analytics dashboard and breakdown hotspot heatmap
 - Reports with CSV export of bookings
+- Payment management dashboard with Excel (.xlsx) export
 - Configurable fares and pricing
 
 ## Tech Stack
@@ -66,10 +69,11 @@ The system was verified with 14 test cases across 8 testing levels.
 | Database | MongoDB Atlas (Mongoose) |
 | Real-time | Socket.IO (live location and chat) |
 | Maps and routing | Leaflet, OSRM, Browser Geolocation API |
+| Payments | Razorpay SDK, UPI QR, ExcelJS, PDFKit |
 | Authentication | JWT, bcrypt |
 | Hosting | Render |
 
-**Database collections (9):** admins, bookings, drivers, fare configs, job offers, messages, pages, pricings, trackings.
+**Database collections (10):** admins, bookings, drivers, job offers, messages, pages, payments, pricings, trackings, fare configs.
 
 ## How Dispatch Works
 
@@ -116,7 +120,7 @@ npm install
 Create `backend/.env` (never commit this file):
 ```env
 PORT=5055
-MONGODB_URI=<your MongoDB Atlas connection string>
+MONGO_URI=<your MongoDB Atlas connection string>
 JWT_SECRET=<a long random string>
 CLIENT_URL=http://localhost:5173
 ```
@@ -132,7 +136,7 @@ npm install
 ```
 Create `frontend/.env`:
 ```env
-VITE_API_URL=http://localhost:5055
+VITE_API_URL=http://localhost:5055/api
 ```
 ```bash
 npm run dev
@@ -213,7 +217,6 @@ All outputs are in the [`Project-Output's`](https://github.com/yashwanth181024/V
 
 - Native mobile apps for customers and drivers
 - More accurate ETA using live traffic data
-- Online payments
 - AI-powered assistance
 - Push, SMS, and email alerts
 - Cloud scaling for higher traffic

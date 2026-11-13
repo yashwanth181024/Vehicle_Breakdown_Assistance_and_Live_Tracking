@@ -17,6 +17,13 @@
   box-shadow: 0 1px 6px rgba(0,0,0,.1); }
 .admin-pay .stat b { display: block; font-size: 1.3rem; }
 .admin-pay button { background: #0d4f9e; color: #fff; border: 0; border-radius: 6px; padding: 10px 16px; font-weight: 700; cursor: pointer; }
+.pay-tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+.pay-tab { flex: 1; padding: 8px 10px; border: 1px solid #ccc; background: #f8fafc; border-radius: 6px; font-weight: 600; font-size: 0.88rem; cursor: pointer; color: #333; text-align: center; }
+.pay-tab.active { background: #0d4f9e; color: #fff; border-color: #0d4f9e; }
+.qr-box { text-align: center; display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 14px; background: #f8fafc; border-radius: 8px; border: 1px solid #e2e8f0; }
+.qr-img { width: 210px; height: 210px; object-fit: contain; background: #fff; padding: 8px; border-radius: 8px; border: 1px solid #ddd; }
+.qr-timer { font-size: 0.95rem; font-weight: 600; color: #d97706; }
+.qr-badge { display: inline-block; padding: 4px 10px; border-radius: 4px; font-size: 0.85rem; font-weight: 600; background: #fef3c7; color: #92400e; }
 @media (prefers-color-scheme: dark) {
   .pay-card, .admin-pay .stat { background: #1c1f26; color: #eee; }
   .pay-card input { background: #12141a; color: #eee; border-color: #444; }

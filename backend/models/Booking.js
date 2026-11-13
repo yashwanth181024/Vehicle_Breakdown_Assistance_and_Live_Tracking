@@ -61,8 +61,16 @@ const bookingSchema = new mongoose.Schema(
     offerHistory: { type: [offerHistorySchema], default: [] },
     dispatchFailed: { type: Boolean, default: false }, // true when no driver accepted
     fare: { type: Number },
+    amount: { type: Number },
     distanceKm: { type: Number, default: 0 },
-    paymentStatus: { type: String, enum: ['unpaid', 'paid'], default: 'unpaid', index: true },
+    paymentMethod: { type: String, enum: ['online', 'cash', 'qr'], default: undefined },
+    paymentStatus: { type: String, enum: ['unpaid', 'pending', 'paid', 'failed'], default: 'unpaid', index: true },
+    paymentId: { type: String },
+    orderId: { type: String },
+    qrId: { type: String },
+    qrExpiresAt: { type: Date },
+    qrImageUrl: { type: String },
+    paidAt: { type: Date },
 
     // --- Severity (accident / highway jobs rank first in the admin queue) ---
     severity: { type: String, enum: SEVERITIES, default: 'medium', index: true },

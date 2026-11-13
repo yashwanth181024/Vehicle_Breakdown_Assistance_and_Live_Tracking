@@ -15,6 +15,7 @@ const Pricing = require('../models/Pricing');
 const { AppError, asyncHandler } = require('../middleware/errorHandler');
 const { generateUniqueBookingNumber } = require('../utils/bookingNumber');
 const PDFDocument = require('pdfkit');
+const { generateReceipt } = require('../services/receiptService');
 const { toPoint, fromPoint } = require('../utils/geo');
 const dispatch = require('../services/dispatch.service');
 const assignment = require('../services/assignment.service');
@@ -48,6 +49,11 @@ function publicBooking(booking, { forShare = false } = {}) {
     status: booking.status,
     serviceType: booking.serviceType,
     severity: booking.severity,
+    fare: booking.fare,
+    amount: booking.amount || booking.fare,
+    paymentStatus: booking.paymentStatus || 'unpaid',
+    paymentMethod: booking.paymentMethod || null,
+    paidAt: booking.paidAt || null,
     pickupLocation: booking.pickupLocation,
     pickup: fromPoint(booking.pickupCoords),
     destination: booking.destination,
@@ -217,6 +223,14 @@ exports.createBooking = asyncHandler(async (req, res) => {
   const diagnosis = pickDiagnosis(b.diagnosis);
   const triage = triageBooking({ serviceType: b.serviceType, description: b.description, hint: b.diagnosisSeverity });
   
+  let estimatedFare = null;
+  const pricing = await Pricing.findOne({ serviceType: triage.serviceType });
+  if (pricing) {
+    estimatedFare = pricing.basePrice + (pricing.perKmRate * (b.distanceKm || 0));
+  } else if (b.fare) {
+    estimatedFare = Number(b.fare) || null;
+  }
+
   const booking = await Booking.create({
     bookingNumber: await generateUniqueBookingNumber(Booking),
     name: b.name,
@@ -236,6 +250,9 @@ exports.createBooking = asyncHandler(async (req, res) => {
     severity: triage.severity,
     priority: triage.priority,
     distanceKm: b.distanceKm || 0,
+    fare: estimatedFare,
+    amount: estimatedFare,
+    paymentStatus: 'unpaid',
     emergencyContacts: Array.isArray(b.emergencyContacts) ? b.emergencyContacts.slice(0, 2) : [],
     remark: 'Request received',
   });
@@ -252,6 +269,8 @@ exports.createBooking = asyncHandler(async (req, res) => {
       bookingNumber: booking.bookingNumber,
       status: booking.status,
       severity: booking.severity,
+      fare: estimatedFare,
+      amount: estimatedFare,
       trackUrl: notification.trackUrl(booking),
     },
   });
@@ -459,38 +478,7 @@ exports.createSOS = asyncHandler(async (req, res) => {
 
 exports.downloadReceipt = asyncHandler(async (req, res) => {
   const owned = await findOwnedBooking(req.params.bookingNumber, req.query.phone || '');
-  if (owned.status !== 'Completed') throw new AppError('Receipt is only available for completed bookings', 400);
-
-  const doc = new PDFDocument({ margin: 50 });
-  res.setHeader('Content-Type', 'application/pdf');
-  res.setHeader('Content-Disposition', `attachment; filename=receipt-${owned.bookingNumber}.pdf`);
-  doc.pipe(res);
-
-  doc.fontSize(20).text('Vehicle Breakdown Assistant', { align: 'center' });
-  doc.fontSize(12).text('24x7 Roadside Assistance', { align: 'center' });
-  doc.moveDown();
-  doc.fontSize(16).text('Receipt', { align: 'center' });
-  doc.moveDown(2);
-
-  doc.fontSize(12);
-  doc.text(`Booking Number: #${owned.bookingNumber}`);
-  doc.text(`Date: ${owned.completedAt ? owned.completedAt.toLocaleDateString() : owned.createdAt.toLocaleDateString()}`);
-  doc.text(`Customer Name: ${owned.name}`);
-  doc.text(`Phone: ${owned.phone}`);
-  doc.moveDown();
-  
-  doc.text(`Service Type: ${owned.serviceType}`);
-  doc.text(`Vehicle: ${owned.vehicleType} ${owned.vehicleNumber ? `(${owned.vehicleNumber})` : ''}`);
-  doc.text(`Location: ${owned.pickupLocation}`);
-  doc.moveDown();
-
-  doc.text(`Status: ${owned.status}`);
-  doc.text(`Total Fare: INR ${owned.fare || 0}`, { underline: true });
-  
-  doc.moveDown(4);
-  doc.fontSize(10).text('Thank you for using our services.', { align: 'center' });
-
-  doc.end();
+  await generateReceipt(owned, res, { req });
 });
 
 exports.helpers = { last10, findOwnedBooking, publicBooking, timelineOf, applyStatus, triageBooking, escapeRegex };

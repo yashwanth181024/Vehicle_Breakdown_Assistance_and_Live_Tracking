@@ -11,7 +11,8 @@ import { listOf, pageOf } from '../../utils/adapt';
 
 const LIMIT = 15;
 
-function Details({ booking, onClose }) {
+function Details({ booking, onClose, onPaid }) {
+  const toast = useToast();
   const b = booking;
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -28,6 +29,8 @@ function Details({ booking, onClose }) {
           <div><dt>Pickup</dt><dd>{pickupText(b)}</dd></div>
           {b.driver && <div><dt>Driver</dt><dd>{b.driver.name || ''}</dd></div>}
           <div><dt>Requested</dt><dd>{formatDateTime(b.createdAt)}</dd></div>
+          <div><dt>Fare</dt><dd>₹{b.fare || b.amount || '-'}</dd></div>
+          <div><dt>Payment</dt><dd><strong>{b.paymentStatus || 'unpaid'}</strong> {b.paymentMethod ? `(${b.paymentMethod === 'qr' ? 'QR / UPI' : b.paymentMethod})` : ''}</dd></div>
         </dl>
         {b.description && <p><strong>Notes:</strong> {b.description}</p>}
         <h3>Progress</h3>
@@ -38,7 +41,30 @@ function Details({ booking, onClose }) {
             <ChatBox bookingNumber={b.bookingNumber} role="admin" />
           </>
         )}
-        <div className="modal-actions"><button type="button" className="btn btn-outline" onClick={onClose}>Close</button></div>
+        <div className="modal-actions">
+          {b.paymentStatus !== 'paid' && (
+            <button
+              type="button"
+              className="btn btn-ok btn-sm"
+              onClick={async () => {
+                try {
+                  await api.post('/payments/mark-cash-paid', {
+                    bookingNumber: b.bookingNumber,
+                    method: b.paymentMethod === 'qr' ? 'qr' : 'cash',
+                  });
+                  toast.success(`Booking ${b.bookingNumber} marked as paid.`);
+                  if (onPaid) onPaid();
+                  onClose();
+                } catch (err) {
+                  toast.error(getErrorMessage(err));
+                }
+              }}
+            >
+              {b.paymentMethod === 'qr' ? 'Mark UPI as Paid' : 'Mark Cash as Paid'}
+            </button>
+          )}
+          <button type="button" className="btn btn-outline" onClick={onClose}>Close</button>
+        </div>
       </div>
     </div>
   );
@@ -123,7 +149,7 @@ export default function AdminRequests() {
       ) : (
         <div className="table-wrap">
           <table>
-            <thead><tr><th>#</th><th>Customer</th><th>Problem</th><th>Pickup</th><th>Status</th><th>Requested</th><th>Actions</th></tr></thead>
+            <thead><tr><th>#</th><th>Customer</th><th>Problem</th><th>Pickup</th><th>Status</th><th>Payment</th><th>Requested</th><th>Actions</th></tr></thead>
             <tbody>
               {rows.map((b) => {
                 const waiting = b.status === 'Pending' || b.status === 'Approved';
@@ -134,6 +160,19 @@ export default function AdminRequests() {
                     <td>{b.serviceType}<br /><span className="small muted">{b.vehicleType}</span></td>
                     <td style={{ maxWidth: 220 }}>{pickupText(b)}</td>
                     <td><span className={statusClass(b.status)}>{b.status}</span></td>
+                    <td>
+                      <span
+                        style={
+                          b.paymentStatus === 'paid'
+                            ? { background: '#dcfce7', color: '#166534', padding: '2px 6px', borderRadius: 4, fontWeight: 600, fontSize: '0.8rem' }
+                            : b.paymentStatus === 'pending' || b.paymentMethod === 'cash'
+                            ? { background: '#fef3c7', color: '#92400e', padding: '2px 6px', borderRadius: 4, fontWeight: 600, fontSize: '0.8rem' }
+                            : { background: '#fee2e2', color: '#991b1b', padding: '2px 6px', borderRadius: 4, fontWeight: 600, fontSize: '0.8rem' }
+                        }
+                      >
+                        {b.paymentStatus === 'paid' ? `Paid (${b.paymentMethod === 'qr' ? 'QR / UPI' : b.paymentMethod || 'online'})` : (b.paymentStatus === 'pending' || b.paymentMethod === 'cash' || b.paymentMethod === 'qr') ? (b.paymentMethod === 'qr' ? 'QR / UPI pending' : 'Cash pending') : 'Unpaid'}
+                      </span>
+                    </td>
                     <td>{formatDateTime(b.createdAt)}</td>
                     <td>
                       <div className="row" style={{ gap: 6, flexWrap: 'wrap' }}>
@@ -175,7 +214,7 @@ export default function AdminRequests() {
         </div>
       )}
 
-      {open && <Details booking={open} onClose={() => setOpen(null)} />}
+      {open && <Details booking={open} onClose={() => setOpen(null)} onPaid={() => load(true)} />}
     </div>
   );
 }

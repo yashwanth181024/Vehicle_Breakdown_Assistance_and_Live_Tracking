@@ -7,6 +7,7 @@ import LocationPicker from '../components/LocationPicker';
 import SosModal from '../components/SosModal';
 import { SERVICE_TYPES, VEHICLE_TYPES, cleanPhone, isPhone } from '../utils/format';
 import { parseBookingNumber, getTrackingUrl } from '../utils/booking';
+import { setCashMethod } from '../utils/paymentApi';
 import { useTranslation } from 'react-i18next';
 
 const EMPTY = { name: '', phone: '', vehicleType: '', vehicleNumber: '', serviceType: '', description: '' };
@@ -48,6 +49,7 @@ export default function BookingRequest() {
   const [busy, setBusy] = useState(false);
   const [triageInfo, setTriageInfo] = useState(null);
   const [fareEstimate, setFareEstimate] = useState(null);
+  const [confirmedBooking, setConfirmedBooking] = useState(null);
   const [sosOpen, setSosOpen] = useState(false);
   const { t } = useTranslation();
 
@@ -118,7 +120,12 @@ export default function BookingRequest() {
       if (typeof Notification !== 'undefined' && Notification.requestPermission) {
         Notification.requestPermission().catch(() => {});
       }
-      navigate(getTrackingUrl(number, phone), { replace: true });
+      const amount = d.fare || d.amount || (fareEstimate && fareEstimate.estimatedFare) || null;
+      setConfirmedBooking({
+        bookingNumber: number,
+        phone,
+        amount,
+      });
     } catch (err) {
       setSubmitError(err.userMessage || getErrorMessage(err, err.message));
     } finally {
@@ -127,6 +134,85 @@ export default function BookingRequest() {
   };
 
   const err = (key) => errors[key] && <span className="field-error" role="alert">{errors[key]}</span>;
+
+  if (confirmedBooking) {
+    const { bookingNumber, phone, amount } = confirmedBooking;
+    const customerPhone = phone || cleanPhone(form.phone);
+    const trackUrl = getTrackingUrl(bookingNumber, customerPhone);
+
+    const onPayCash = async () => {
+      setBusy(true);
+      try {
+        await setCashMethod(bookingNumber, phone);
+        toast.success(t('Cash payment selected.'));
+      } catch (err) {
+        console.error('Failed to set cash payment:', err);
+      } finally {
+        navigate(trackUrl, { replace: true });
+      }
+    };
+
+    return (
+      <div className="container page" style={{ maxWidth: 600 }}>
+        <div className="card" style={{ textAlign: 'center', padding: '36px 20px' }}>
+          <div style={{ fontSize: '3rem', color: '#16a34a', lineHeight: 1, marginBottom: 12 }}>✓</div>
+          <h1 style={{ margin: '0 0 8px' }}>{t('Request Sent Successfully!')}</h1>
+          <p className="muted" style={{ margin: '0 0 16px', fontSize: '1.1rem' }}>
+            {t('Booking No:')} <strong>#{bookingNumber}</strong>
+          </p>
+
+          {amount && (
+            <div className="notice notice-info" style={{ marginBottom: 24, fontSize: '1.15rem' }}>
+              <strong>{t('Estimated Amount:')}</strong> ₹{amount}
+            </div>
+          )}
+
+          <p style={{ margin: '0 0 20px', color: 'var(--text-muted)' }}>
+            {t('How would you like to pay?')}
+          </p>
+
+          <div className="stack" style={{ gap: 12, maxWidth: 340, margin: '0 auto' }}>
+            <button
+              type="button"
+              className="btn btn-signal btn-block"
+              style={{ minHeight: 48, fontSize: '1.05rem' }}
+              onClick={() => navigate(`/pay/${bookingNumber}?phone=${encodeURIComponent(customerPhone)}`)}
+            >
+              💳 {t('Pay Online (Razorpay)')}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-primary btn-block"
+              style={{ minHeight: 48, fontSize: '1.05rem' }}
+              onClick={() => navigate(`/pay/${bookingNumber}?phone=${encodeURIComponent(customerPhone)}&mode=qr`)}
+            >
+              📱 {t('Pay by Scan QR')}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-outline btn-block"
+              style={{ minHeight: 48, fontSize: '1.05rem' }}
+              disabled={busy}
+              onClick={onPayCash}
+            >
+              💵 {t('Pay Cash to Driver')}
+            </button>
+
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost btn-block"
+              style={{ marginTop: 8 }}
+              onClick={() => navigate(trackUrl, { replace: true })}
+            >
+              {t('Pay later (Track booking)')}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="container page" style={{ maxWidth: 820 }}>

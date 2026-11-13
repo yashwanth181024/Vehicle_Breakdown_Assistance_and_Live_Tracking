@@ -21,7 +21,7 @@ const ERROR_TEXT = {
 
 /**
  * Speech to text and text to speech, using the browser's own voice features (free, no API key).
- * Voice input works in Chrome and Edge, and only on https:// or localhost.
+ * Voice input works in Chrome and Edge, and only on secure contexts (HTTPS).
  *
  *   const speech = useSpeech();
  *   speech.start('hi-IN', (finalText) => fillForm(finalText));
