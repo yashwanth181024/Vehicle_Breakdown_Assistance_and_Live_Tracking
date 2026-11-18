@@ -362,7 +362,7 @@ All outputs are in the [`Project-Output's`](https://github.com/yashwanth181024/V
 MCA, Dr. Ambedkar Institute of Technology, Bengaluru (VTU)
 GitHub: [@yashwanth181024](https://github.com/yashwanth181024)
 
-**Project guide:** _add your guide's name here_
+**Project guide:** Anitha J, Assistant Lecturer, Dr. Ambedkar Institute of Technology, Bengaluru
 
 ## License
 
