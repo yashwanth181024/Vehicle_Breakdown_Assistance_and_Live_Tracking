@@ -13,8 +13,8 @@ A MERN-stack web platform that connects stranded vehicle owners with nearby road
 
 > The demo runs on a free Render instance, so the first load can take up to a minute while the server wakes up.
 
-*MCA III Semester Project, 2026-27 | Dr. Ambedkar Institute of Technology, Bengaluru | Visvesvaraya Technological University (VTU)*
-*Submitted for the 11th International INEX Expo (State Level Selection, Karnataka)*
+*MCA III Semester Project, 2026-27 | Dr. Ambedkar Institute of Technology, Bengaluru | Visvesvaraya Technological University (VTU)*  
+*Selected at the State Level Exhibition (Karnataka) to represent at the International INEX Expo-2026*
 
 ---
 
@@ -31,6 +31,7 @@ A MERN-stack web platform that connects stranded vehicle owners with nearby road
 - [Deployment](#deployment)
 - [Screenshots](#screenshots)
 - [Roadmap](#roadmap)
+- [Recognition](#recognition)
 - [Author](#author)
 
 ## About the Project
@@ -359,6 +360,10 @@ All outputs are in the [`Project-Output's`](https://github.com/yashwanth181024/V
 - AI-powered assistance
 - Push, SMS, and email alerts (job and status updates currently go out live over Socket.IO only)
 - Cloud scaling for higher traffic
+
+## Recognition
+
+This project was presented at the **INEX Karnataka State Level Exhibition** and was selected to represent at the prestigious **International INEX Expo-2026** for outstanding performance and innovation. A Certificate of Appreciation was awarded to Yashwanth G S by INEX India, organised with PLYRoNeST, the Indian Innovators Association (IIA), and IBS Global.
 
 ## Author
 
