@@ -7,6 +7,10 @@ A MERN-stack web platform that connects stranded vehicle owners with nearby road
 
 **Live demo:** https://vehicle-breakdown-assistant-1-sdp9.onrender.com/
 
+<img src="Project-Output%27s/Deployment_and_Mobile_App_Output/Live_Demo_QR_Code.png" width="180" alt="Scan to open the live demo">
+
+*Scan the QR code with your phone to open the live demo.*
+
 > The demo runs on a free Render instance, so the first load can take up to a minute while the server wakes up.
 
 *MCA III Semester Project, 2026-27 | Dr. Ambedkar Institute of Technology, Bengaluru | Visvesvaraya Technological University (VTU)*
